@@ -33,10 +33,11 @@ test-cov:
 	@echo "\n\033[1m\033[34mCoverage report generated in htmlcov/index.html\033[39m\033[0m"
 
 publish: clean build
-	#
-	# Be sure to set TWINE_REPOSITORY_URL to the repo you want to upload to!!
-	#
-	uv run twine upload --verbose dist/*
+	# See: https://docs.astral.sh/uv/guides/package/#publishing-your-package
+	# Make sure you set up your env, e.g.:
+	# - UV_PUBLISH_INDEX
+	# - UV_PUBLISH_TOKEN
+	uv run publish --verbose
 
 lint:
 	uv run --dev ruff check pystorm/ test/

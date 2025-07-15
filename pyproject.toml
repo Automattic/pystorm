@@ -1,5 +1,5 @@
 [project]
-version = "3.1.4+a8c.2"
+version = "3.1.4+a8c.1"
 name = "pystorm"
 description = "Battle-tested Apache Storm Multi-Lang implementation for Python."
 readme = "README.rst"
@@ -9,6 +9,7 @@ dependencies = [
     "six>=1.5",
     "simplejson>=2.2.0",
 ]
+classifiers = ["Private :: Do Not Upload"]
 
 [project.urls]
 Homepage = "https://github.com/Automattic/pystorm"
