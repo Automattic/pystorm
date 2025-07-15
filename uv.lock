@@ -401,36 +401,11 @@ wheels = [
 
 [[package]]
 name = "pystorm"
+version = "3.1.4+a8c.1"
 source = { editable = "." }
 dependencies = [
     { name = "simplejson" },
     { name = "six" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "coverage" },
-    { name = "coveralls" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-timeout" },
-    { name = "simplejson" },
-    { name = "six" },
-]
-docs = [
-    { name = "sphinx", version = "7.4.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
-    { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
-    { name = "sphinx", version = "8.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-]
-lint = [
-    { name = "ruff" },
-]
-test = [
-    { name = "coverage" },
-    { name = "coveralls" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-timeout" },
 ]
 
 [package.dev-dependencies]
@@ -448,24 +423,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "coverage", marker = "extra == 'all'" },
-    { name = "coverage", marker = "extra == 'test'" },
-    { name = "coveralls", marker = "extra == 'all'" },
-    { name = "coveralls", marker = "extra == 'test'" },
-    { name = "pytest", marker = "extra == 'all'" },
-    { name = "pytest", marker = "extra == 'test'" },
-    { name = "pytest-cov", marker = "extra == 'all'" },
-    { name = "pytest-cov", marker = "extra == 'test'" },
-    { name = "pytest-timeout", marker = "extra == 'all'" },
-    { name = "pytest-timeout", marker = "extra == 'test'" },
-    { name = "ruff", marker = "extra == 'lint'" },
     { name = "simplejson", specifier = ">=2.2.0" },
-    { name = "simplejson", marker = "extra == 'all'", specifier = ">=2.2.0" },
     { name = "six", specifier = ">=1.5" },
-    { name = "six", marker = "extra == 'all'", specifier = ">=1.5" },
-    { name = "sphinx", marker = "extra == 'docs'" },
 ]
-provides-extras = ["all", "docs", "lint", "test"]
 
 [package.metadata.requires-dev]
 dev = [
