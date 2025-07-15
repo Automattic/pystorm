@@ -32,12 +32,10 @@ test-cov:
 	uv run --dev pytest --cov=pystorm --cov-report=html --cov-report=term
 	@echo "\n\033[1m\033[34mCoverage report generated in htmlcov/index.html\033[39m\033[0m"
 
+# See: https://docs.astral.sh/uv/guides/package/#publishing-your-package
+# Make sure you set up your env prior to running this, e.g.: UV_PUBLISH_URL
 publish: clean build
-	# See: https://docs.astral.sh/uv/guides/package/#publishing-your-package
-	# Make sure you set up your env, e.g.:
-	# - UV_PUBLISH_INDEX
-	# - UV_PUBLISH_TOKEN
-	uv run publish --verbose
+	uv publish --verbose
 
 lint:
 	uv run --dev ruff check pystorm/ test/
