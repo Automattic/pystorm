@@ -1,6 +1,4 @@
-venv ?= .venv
-
-.PHONY: default clean test publish
+.PHONY: default clean test publish requirements install lint lint-fix format check docs build dev-setup reset sync sync-dev info requirements.txt test-requirements.txt
 .SUFFIXES:
 .SECONDARY:
 
@@ -8,40 +6,68 @@ venv ?= .venv
 ## Special Make Targets
 ################################################################################
 
-default: dist
+default: build
+
+build: pyproject.toml pystorm/*.py pystorm/serializers/*.py
+	uv build
+
+info:
+	@echo "\033[1m\033[34mProject Information:\033[39m\033[0m"
+	@echo "Name: pystorm"
+	@echo "Description: Battle-tested Apache Storm Multi-Lang implementation for Python"
+	@echo "Current version: $(shell uv run python -c "from pystorm import __version__; print(__version__)")"
+	@echo "Python version: $(shell uv run python --version)"
+	@echo "UV version: $(shell uv --version)"
 
 clean:
-	rm -rf dist pystorm.egg-info $(venv)
+	rm -rf dist pystorm.egg-info .venv .pytest_cache .coverage htmlcov
 
-test: $(venv)
-	( . $(venv)/bin/activate && pytest )
+test:
+	uv run --dev pytest
 
-publish: clean dist
-	#
-	# Be sure to set TWINE_REPOSITORY_URL to the repo you want to upload to!!
-	#
-	( . $(venv)/bin/activate && twine upload --verbose dist/* )
+test-msgpack:
+	uv run --with msgpack --dev pytest
 
-################################################################################
-## Physical Targets
-################################################################################
+test-cov:
+	uv run --dev pytest --cov=pystorm --cov-report=html --cov-report=term
+	@echo "\n\033[1m\033[34mCoverage report generated in htmlcov/index.html\033[39m\033[0m"
 
-$(venv): requirements.txt test-requirements.txt setup.cfg
-	# Create the virtual env that we are going to install into
-	uv venv $(venv)
-	# Install package deps
-	( . $(venv)/bin/activate && uv pip install -r requirements.txt )
-	# Install test deps
-	( . $(venv)/bin/activate && uv pip install -r test-requirements.txt )
-	# Install build deps
-	( . $(venv)/bin/activate && uv pip install build twine)
-	############################################################
-	# Development Environment Created                          #
-	#                                                          #
-	# Please use source to activate it for your shell.         #
-	############################################################
-	@echo "\n\033[1m\033[34msource $(venv)/bin/activate\033[39m\033[0m\n"
-	############################################################
+# See: https://docs.astral.sh/uv/guides/package/#publishing-your-package
+# Make sure you set up your env prior to running this, e.g.: UV_PUBLISH_URL
+publish: clean build
+	uv publish --verbose
 
-dist: $(venv) pystorm/*.py pystorm/serializers/*.py
-	( . $(venv)/bin/activate && python -m build --no-isolation )
+lint:
+	uv run --dev ruff check pystorm/ test/
+
+lint-fix:
+	uv run --dev ruff check --fix pystorm/ test/
+
+format:
+	uv run --dev ruff format pystorm/ test/
+
+check: lint test
+
+docs:
+	uv run --dev sphinx-build -b html doc/source doc/build/html
+
+# Generate requirements.txt for publishing
+requirements.txt:
+	uv pip compile pyproject.toml --output-file requirements.txt
+
+# Generate test-requirements.txt for publishing
+test-requirements.txt:
+	uv pip compile pyproject.toml --group dev --output-file test-requirements.txt
+
+# Generate both requirements files
+requirements: requirements.txt test-requirements.txt
+
+# Clean everything and start fresh
+reset: clean
+	uv sync --reinstall --dev
+
+sync:
+	uv sync
+
+sync-dev:
+	uv sync --dev

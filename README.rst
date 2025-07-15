@@ -13,8 +13,20 @@ tools for actually building/submitting the topologies (e.g.,
 A ``Makefile`` was added to help building and publishing this package. Please note, we currently depend on ``uv`` to setup the Python enviroment. Some helpful commands:
 
 - ``make test`` - runs unit tests
-- ``make dist`` (default) - builds the distribution / wheel
-- ``TWINE_REPOSITORY_URL='https://...' make publish`` - publishes the package to the repo and index given by ``TWINE_REPOSITORY_URL``
+- ``make build`` (default) - builds the distribution / wheel
+- ``make publish`` - publishes the package using ``uv publish`` (requires environment variables)
+- ``make lint`` - runs code linting
+- ``make format`` - formats code
+- ``make check`` - runs both linting and tests
+- ``make docs`` - builds documentation
+
+To publish to a private index, set these environment variables before running ``make publish``:
+
+.. code-block:: bash
+
+    export UV_PUBLISH_INDEX=https://pypi.example.com/simple/
+    export UV_PUBLISH_TOKEN=your-token-here
+    make publish
 
 Documentation
 -------------
