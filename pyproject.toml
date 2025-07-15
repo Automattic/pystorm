@@ -79,18 +79,44 @@ select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
     "F",  # pyflakes
-    "I",  # isort
     "B",  # flake8-bugbear
     "C4", # flake8-comprehensions
-    "UP", # pyupgrade
+    # "UP", # pyupgrade - disabled to preserve existing style
 ]
 ignore = [
     "E501",  # line too long, handled by black
     "B008",  # do not perform function calls in argument defaults
     "C901",  # too complex
+    # Python 2/3 compatibility - preserve existing style
+    "UP009",  # UTF-8 encoding declaration is unnecessary
+    "UP010",  # Unnecessary __future__ imports
+    "UP025",  # Remove unicode literals from strings
+    "UP026",  # mock is deprecated, use unittest.mock
+    "UP032",  # Use f-string instead of format call
+    "UP036",  # Version block is outdated for minimum Python version
+    # Modern Python syntax - preserve existing style
+    "UP004",  # Class inherits from object
+    "UP008",  # Use super() instead of super(__class__, self)
+    "UP020",  # Use builtin open
+    "UP024",  # Replace aliased errors with OSError
+    "UP028",  # Replace yield over for loop with yield from
+    # Import sorting - not enforced in this fork
+    #"I001",   # isort/import sorting
+    # Existing patterns in fork - preserve to avoid churn
+    "E722",   # Do not use bare except
+    "B028",   # No explicit stacklevel keyword argument found
+    "B904",   # Within an except clause, raise exceptions with raise ... from err
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = [
     "F401", # "Unused" module-level imports are ok, actually
+]
+# Test files can have unused imports for backwards compatibility
+"test/**/*.py" = [
+    "F401", # Unused imports in tests are ok
+]
+# Specific unused imports that are kept for backwards compatibility
+"pystorm/bolt.py" = [
+    "F401", # six.itervalues unused but kept for compatibility
 ]
