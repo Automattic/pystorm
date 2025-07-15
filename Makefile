@@ -1,4 +1,4 @@
-.PHONY: default clean test publish requirements install install-dev lint format check docs build
+.PHONY: default clean test publish requirements install lint lint-fix format check docs build dev-setup reset sync sync-dev info
 .SUFFIXES:
 .SECONDARY:
 
@@ -12,43 +12,38 @@ clean:
 	rm -rf dist pystorm.egg-info .venv .pytest_cache .coverage htmlcov
 
 test:
-	uv run pytest
+	uv run --dev pytest
 
 test-cov:
-	uv run pytest --cov=pystorm --cov-report=html --cov-report=term
+	uv run --dev pytest --cov=pystorm --cov-report=html --cov-report=term
+	@echo "\n\033[1m\033[34mCoverage report generated in htmlcov/index.html\033[39m\033[0m"
 
-publish: clean build
+publish: clean build sync
 	#
 	# Be sure to set TWINE_REPOSITORY_URL to the repo you want to upload to!!
 	#
 	uv run twine upload --verbose dist/*
 
-install:
-	uv pip install -e .
-
-install-dev:
-	uv pip install -e ".[test,docs,lint]"
-
 lint:
-	uv run pep8 pystorm/ test/
-	uv run pyflakes pystorm/ test/
+	uv run --dev ruff check pystorm/ test/
+
+lint-fix:
+	uv run --dev ruff check --fix pystorm/ test/
 
 format:
-	uv run black pystorm/ test/
+	uv run --dev ruff format pystorm/ test/
 
 check: lint test
 
 docs:
-	uv run sphinx-build -b html doc/source doc/build/html
+	uv run --dev sphinx-build -b html doc/source doc/build/html
 
 requirements: sync
-	@echo "Generating requirements files..."
-	uv pip compile pyproject.toml --output-file requirements.txt
-	uv pip compile pyproject.toml --extra test --output-file test-requirements.txt
-	@echo "Requirements files generated:"
-	@echo "  - requirements.txt (main dependencies)"
-	@echo "  - test-requirements.txt (test dependencies)"
+	@echo "Requirements managed by uv:"
 	@echo "  - uv.lock (locked versions - managed by uv)"
+	@echo "  - pyproject.toml (dependency specifications)"
+	@echo "  - Use 'uv sync' to install base dependencies"
+	@echo "  - Use 'uv sync --dev' to install dev dependencies"
 
 ################################################################################
 ## Physical Targets
@@ -62,23 +57,24 @@ build: pystorm/*.py pystorm/serializers/*.py
 ################################################################################
 
 # Quick development setup
-dev-setup: install-dev
+dev-setup: sync-dev
 	@echo "\n\033[1m\033[32mDevelopment environment ready!\033[39m\033[0m"
+	@echo "Dependencies installed via uv sync"
 	@echo "Run 'make test' to run tests"
 	@echo "Run 'make lint' to check code style"
+	@echo "Run 'make lint-fix' to automatically fix linting issues"
 	@echo "Run 'make format' to format code"
 	@echo "Run 'make docs' to build documentation"
 
-# Run tests with coverage and generate report
-coverage: test-cov
-	@echo "\n\033[1m\033[34mCoverage report generated in htmlcov/index.html\033[39m\033[0m"
-
 # Clean everything and start fresh
 reset: clean
-	uv sync --reinstall
+	uv sync --reinstall --dev
 
 sync:
 	uv sync
+
+sync-dev:
+	uv sync --dev
 
 # Show project info
 info:

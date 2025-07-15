@@ -32,15 +32,9 @@ test = [
 ]
 docs = [
     "sphinx",
-    "coverage",
-    "coveralls",
-    "pytest",
-    "pytest-cov",
-    "pytest-timeout",
 ]
 lint = [
-    "pep8",
-    "pyflakes",
+    "ruff",
 ]
 all = [
     "six>=1.5",
@@ -50,6 +44,17 @@ all = [
     "pytest",
     "pytest-cov",
     "pytest-timeout",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "coverage",
+    "coveralls",
+    "pytest",
+    "pytest-cov",
+    "pytest-timeout",
+    "ruff",
+    "sphinx",
 ]
 
 [project.urls]
@@ -96,4 +101,29 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "class .*\\bProtocol\\):",
     "@(abc\\.)?abstractmethod",
+]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = [
+    "F401", # "Unused" module-level imports are ok, actually
 ]
