@@ -1,5 +1,5 @@
 [project]
-version = "3.1.4+a8c.1"
+version = "3.1.4+a8c.2"
 name = "pystorm"
 description = "Battle-tested Apache Storm Multi-Lang implementation for Python."
 readme = "README.rst"
@@ -11,10 +11,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/pystorm/pystorm"
+Homepage = "https://github.com/Automattic/pystorm"
 Documentation = "http://pystorm.readthedocs.org/"
-Repository = "https://github.com/pystorm/pystorm"
-"Bug Tracker" = "https://github.com/pystorm/pystorm/issues"
+Repository = "https://github.com/Automattic/pystorm"
+"Bug Tracker" = "https://github.com/Automattic/pystorm/issues"
 
 [tool.uv]
 dev-dependencies = [
