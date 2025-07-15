@@ -25,6 +25,9 @@ clean:
 test:
 	uv run --dev pytest
 
+test-msgpack:
+	uv run --with msgpack --dev pytest
+
 test-cov:
 	uv run --dev pytest --cov=pystorm --cov-report=html --cov-report=term
 	@echo "\n\033[1m\033[34mCoverage report generated in htmlcov/index.html\033[39m\033[0m"

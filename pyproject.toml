@@ -20,6 +20,7 @@ Repository = "https://github.com/pystorm/pystorm"
 dev-dependencies = [
     "coverage",
     "coveralls",
+    "msgpack",
     "pytest",
     "pytest-cov",
     "pytest-timeout",
