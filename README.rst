@@ -7,6 +7,15 @@ under-the-hood by Storm Python libraries that will provide the command-line
 tools for actually building/submitting the topologies (e.g.,
 `streamparse <https://github.com/Parsely/streamparse>`_).
 
+(a8c) Build / Publish
+---------------------
+
+A ``Makefile`` was added to help building and publishing this package. Please note, we currently depend on ``uv`` to setup the Python enviroment. Some helpful commands:
+
+- ``make test`` - runs unit tests
+- ``make dist`` (default) - builds the distribution / wheel
+- ``TWINE_REPOSITORY_URL='https://...' make publish`` - publishes the package to the repo and index given by ``TWINE_REPOSITORY_URL``
+
 Documentation
 -------------
 
