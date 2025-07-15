@@ -1,0 +1,99 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pystorm"
+dynamic = ["version"]
+description = "Battle-tested Apache Storm Multi-Lang implementation for Python."
+readme = "README.rst"
+license = {text = "Apache License 2.0"}
+authors = [
+    {name = "Parsely, Inc.", email = "hello@parsely.com"}
+]
+maintainers = [
+    {name = "Automattic", email = "hello@automattic.com"}
+]
+keywords = ["storm", "streaming", "apache", "real-time"]
+
+requires-python = ">=3.9"
+dependencies = [
+    "six>=1.5",
+    "simplejson>=2.2.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "coverage",
+    "coveralls",
+    "pytest",
+    "pytest-cov",
+    "pytest-timeout",
+]
+docs = [
+    "sphinx",
+    "coverage",
+    "coveralls",
+    "pytest",
+    "pytest-cov",
+    "pytest-timeout",
+]
+lint = [
+    "pep8",
+    "pyflakes",
+]
+all = [
+    "six>=1.5",
+    "simplejson>=2.2.0",
+    "coverage",
+    "coveralls",
+    "pytest",
+    "pytest-cov",
+    "pytest-timeout",
+]
+
+[project.urls]
+Homepage = "https://github.com/pystorm/pystorm"
+Documentation = "http://pystorm.readthedocs.org/"
+Repository = "https://github.com/pystorm/pystorm"
+"Bug Tracker" = "https://github.com/pystorm/pystorm/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pystorm"]
+
+[tool.hatch.version]
+path = "pystorm/version.py" 
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--timeout=30",
+]
+timeout = 30
+
+[tool.coverage.run]
+source = ["pystorm"]
+omit = [
+    "*/test/*",
+    "*/tests/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]

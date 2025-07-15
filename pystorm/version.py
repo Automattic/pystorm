@@ -32,3 +32,6 @@ def _safe_int(string):
 
 __version__ = "3.1.4+a8c.1"
 VERSION = tuple(_safe_int(x) for x in __version__.split("."))
+
+# This is used by hatchling to extract the version
+__all__ = ["__version__", "VERSION"]
