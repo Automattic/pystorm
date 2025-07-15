@@ -21,6 +21,7 @@ in one place. Based on the suggestion `here. <http://bit.ly/16LbuJF>`_
 :organization: Parsely
 """
 
+import importlib.metadata
 
 def _safe_int(string):
     """ Simple function to convert strings into ints without dying. """
@@ -29,8 +30,8 @@ def _safe_int(string):
     except ValueError:
         return string
 
+__version__ = importlib.metadata.version("pystorm")
 
-__version__ = "3.1.4+a8c.1"
 VERSION = tuple(_safe_int(x) for x in __version__.split("."))
 
 # This is used by hatchling to extract the version
