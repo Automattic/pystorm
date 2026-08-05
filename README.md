@@ -100,10 +100,7 @@ pystorm-a8c submit \
     -j .artifacts/topology.jar \
     -f \
     --wait 30 \
-    -o 'install_virtualenv=0' \
-    -o 'virtualenv_name=venv' \
-    -o 'topology.blobstore.map={"myproject-venv-abc123_tar_gz":{"localname":"venv","uncompress":true}}' \
-    -o 'topology.environment={"PATH":"../venv/bin:/usr/local/bin:/usr/bin:/bin"}' \
+    --venv-blobstore-key myproject-venv-abc123_tar_gz \
     -o 'topology.max.spout.pending=200'
 ```
 
@@ -120,15 +117,36 @@ pystorm-a8c submit \
 | `--timeout` | Milliseconds to wait for Nimbus (default 7000) |
 | `-o`, `--option` | `key=value` passed through to the Storm conf; repeatable |
 | `--config` | Path to config.json |
+| `--venv-blobstore-key` | **Required.** Blobstore key of the worker virtualenv tarball |
 
 `-o` values are parsed as JSON when possible and left as strings otherwise, so
-`-o topology.workers=4` gives an int, `-o topology.environment={...}` gives a
-dict, and `-o virtualenv_flags=-p /usr/bin/python3.9` gives a string.
+`-o topology.workers=4` gives an int and `-o topology.environment={...}` gives a
+dict.
 
-The virtualenv is expected to reach the workers through the Storm blobstore.
-`submit` rewrites each component's `execution_command` to
-`<virtualenv_root>/<virtualenv_name>/bin/pystorm_a8c_run`, which must match the
-blobstore `localname` and the `PATH` you set via `-o topology.environment`.
+**`-o` keys must be dotted Storm conf names.** They pass through to Nimbus
+untouched. A bare word is addressed to `pystorm-a8c` itself, and this package
+has no settings of its own left, so one is refused rather than shipped into the
+topology conf to do nothing.
+
+### The worker virtualenv
+
+`--venv-blobstore-key` is how the venv reaches the workers, and it is required
+— there is no other worker layout. From that one key `submit` derives every
+setting that has to agree about the path:
+
+| Derived | Value |
+|---|---|
+| `topology.blobstore.map` | `{"<KEY>": {"localname": "venv", "uncompress": true}}` |
+| `topology.environment` | `{"PATH": "../venv/bin:/usr/local/bin:/usr/bin:/bin"}` |
+| each component's `execution_command` | `../venv/bin/pystorm_a8c_run` |
+| `virtualenv_name`, `virtualenv_root` | `venv`, `..` |
+
+`..` is the worker directory: Storm starts the multi-lang subprocess with its
+cwd already inside the unpacked `resources/`, which is where the blobstore
+extracts `localname` alongside. Passing any of those settings yourself is
+refused — two sources for one path is how the execution command and the
+blobstore `localname` drift apart, and the symptom is a worker that never
+starts.
 
 ## config.json
 
@@ -140,7 +158,6 @@ Only these keys are read. Anything else is ignored.
   "envs": {
     "storm4": {
       "nimbus": "storm-ha.example.com:6627",
-      "virtualenv_root": "..",
       "workers": ["supervisor01", "supervisor02"],
       "log": { "level": "info" },
       "options": {
@@ -156,17 +173,20 @@ Only these keys are read. Anything else is ignored.
 |---|---|
 | `topology_specs` | Directory holding topology definition files |
 | `envs.<name>.nimbus` | `host` or `host:port` (port defaults to 6627) |
-| `envs.<name>.virtualenv_root` | Prefix for the worker venv path (default `..`) |
 | `envs.<name>.workers` | Supervisor hosts. If absent, Nimbus is asked |
 | `envs.<name>.log` | `level` only. See below |
 | `envs.<name>.options` | Storm conf defaults, overridden by `-o` |
 | `serializer` | Accepted only as `"json"` — see below |
 
 Option precedence, lowest to highest:
-`envs.<name>.options` → log/venv keys → the `Topology` class's `config` → `-o`.
+`envs.<name>.options` → `log.level` → the `Topology` class's `config` → `-o` →
+the settings derived from `--venv-blobstore-key`, which nothing can override.
 
-`use_ssh_for_nimbus` is accepted and **ignored**, with a warning. Nimbus is
-always contacted directly.
+`use_ssh_for_nimbus` is **refused**: Nimbus is always contacted directly, so a
+config still carrying the key is telling you something that is not true. The
+retired virtualenv keys — `install_virtualenv`, `use_virtualenv`,
+`virtualenv_flags`, `virtualenv_root`, `virtualenv_name` — are refused the same
+way, wherever they appear.
 
 `log.path`, `log.file`, `log.max_bytes` and `log.backup_count` are likewise
 accepted and **ignored**, with a warning. They configured a rotating file
@@ -183,7 +203,8 @@ Set this environment variable to override the `nimbus` value from config.json
 entirely:
 
 ```bash
-PYSTORM_A8C_NIMBUS=other-nimbus:6627 pystorm-a8c submit -e storm4 -n raws
+PYSTORM_A8C_NIMBUS=other-nimbus:6627 pystorm-a8c submit \
+    -e storm4 -n raws --venv-blobstore-key myproject-venv-abc123_tar_gz
 ```
 
 Useful for pointing an existing config at a different cluster without editing
@@ -242,7 +263,7 @@ versions.
 |---|---|
 | SSH / Fabric / Paramiko (`ssh_tunnel`, `activate_env`, `run_cmd`, remote log tailing) | Nimbus is reachable directly. Everything SSH-shaped existed to reach hosts that are now reached by other means. |
 | `lein`, `project.clj`, the JDK build chain | A pure-Python topology JAR contains no Java. It is a ZIP of `resources/`, which the stdlib can write. |
-| Virtualenv creation over SSH (`update_virtualenv`, `install_virtualenv`) | Virtualenvs ship to workers through the Storm blobstore. `install_virtualenv` is still accepted but warns if truthy. |
+| Virtualenv creation over SSH (`update_virtualenv`, `install_virtualenv`) | Virtualenvs ship to workers through the Storm blobstore, named by `--venv-blobstore-key`. The old options are refused, not ignored. |
 | The pluggable serializer indirection and `msgpack` | JSON was the only serializer ever configured. |
 | Nine unused subcommands (`run`, `visualize`, `quickstart`, `tail`, `list`, `kill`, `restart`, `stats`, ...) | `sparse` auto-discovered its subcommands, which is how these persisted unnoticed. The two that are used are now registered explicitly. |
 | Java component specs, Flux emission | Flux was never on the submit path; submission builds native Storm Thrift types. |

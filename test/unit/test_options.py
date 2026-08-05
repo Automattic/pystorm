@@ -150,10 +150,71 @@ def test_topology_debug_forces_debug_logging():
     assert options["pystorm.log.level"] == "debug"
 
 
-def test_virtualenv_root_is_optional():
-    """Upstream raw-subscripted it, so an env without the key crashed submit."""
+def test_topology_python_path_points_into_the_venv():
+    """It names the same directory the execution command does.
+
+    It used to be built from the topology name while the execution command was
+    built from `virtualenv_name`, so with `-o virtualenv_name=venv` the two
+    named different directories -- and this is the one an operator reads first
+    when a worker will not start.
+    """
+    from pystorm_a8c.cli.submit import VIRTUALENV_BIN
+
     options = resolve(env_config={"workers": ["w1"]})
-    assert options["topology.python.path"] == "../some_topology/bin/python"
+    assert options["topology.python.path"] == f"{VIRTUALENV_BIN}/python"
+    assert options["topology.python.path"] == "../venv/bin/python"
+
+
+def test_the_venv_wiring_is_added_from_the_blobstore_key():
+    from pystorm_a8c.cli.submit import resolve_options
+
+    options = resolve_options(
+        None,
+        {"workers": ["w1"]},
+        fake_topology(),
+        "raws",
+        venv_blobstore_key="myproject-venv-abc123_tar_gz",
+    )
+
+    assert options["topology.blobstore.map"] == {
+        "myproject-venv-abc123_tar_gz": {"localname": "venv", "uncompress": True}
+    }
+    assert options["topology.environment"] == {
+        "PATH": "../venv/bin:/usr/local/bin:/usr/bin:/bin"
+    }
+    assert options["virtualenv_name"] == "venv"
+    assert options["virtualenv_root"] == ".."
+
+
+def test_a_retired_key_in_the_env_block_is_refused():
+    """config.json carried these too, not just the -o flags."""
+    with pytest.raises(ValueError, match="use_ssh_for_nimbus"):
+        resolve(env_config={"workers": ["w1"], "use_ssh_for_nimbus": False})
+
+
+def test_a_stale_virtualenv_root_in_config_json_is_refused():
+    """casterisk's config.json sets this key; it is derived now.
+
+    Ignoring it silently would move every worker's venv without saying so.
+    """
+    with pytest.raises(ValueError, match="virtualenv_root"):
+        resolve(env_config={"workers": ["w1"], "virtualenv_root": "/data/virtualenvs"})
+
+
+def test_a_json_serializer_is_still_accepted():
+    """`serializer` is consumed by set_topology_serializer, so it is not retired."""
+    options = resolve(env_config={"workers": ["w1"], "serializer": "json"})
+    assert options["topology.workers"] == 1
+
+
+def test_a_bare_key_in_the_env_options_block_is_refused():
+    with pytest.raises(ValueError, match="virtualenv_flags"):
+        resolve(env_config={"workers": ["w1"], "options": {"virtualenv_flags": "-p x"}})
+
+
+def test_a_bare_key_in_the_topology_config_is_refused():
+    with pytest.raises(ValueError, match="Topology.config"):
+        resolve(topology_config={"install_virtualenv": 0})
 
 
 def test_sudo_user_is_gone():

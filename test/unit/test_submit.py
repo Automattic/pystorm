@@ -28,9 +28,7 @@ def test_execution_command_is_rewritten_to_the_venv_path():
     bolt, shell = shell_bolt()
     topology_class = SimpleNamespace(thrift_bolts={"b": bolt}, thrift_spouts={})
 
-    rewrite_execution_commands(
-        topology_class, virtualenv_root="..", virtualenv_name="venv"
-    )
+    rewrite_execution_commands(topology_class)
 
     assert shell.execution_command == "../venv/bin/pystorm_a8c_run"
 
@@ -41,11 +39,33 @@ def test_spouts_are_rewritten_too():
     spout, shell = shell_spout()
     topology_class = SimpleNamespace(thrift_bolts={}, thrift_spouts={"s": spout})
 
-    rewrite_execution_commands(
-        topology_class, virtualenv_root="/data/virtualenvs", virtualenv_name="raws"
+    rewrite_execution_commands(topology_class)
+
+    assert shell.execution_command == "../venv/bin/pystorm_a8c_run"
+
+
+def test_the_rewritten_path_matches_what_the_blobstore_delivers():
+    """The execution command, the localname and the PATH are one path.
+
+    They used to come from three places that could disagree; a mismatch is a
+    worker that never starts, with nothing in the submit output to say why.
+    """
+    from pystorm_a8c.cli.submit import (
+        blobstore_options,
+        rewrite_execution_commands,
     )
 
-    assert shell.execution_command == "/data/virtualenvs/raws/bin/pystorm_a8c_run"
+    bolt, shell = shell_bolt()
+    topology_class = SimpleNamespace(thrift_bolts={"b": bolt}, thrift_spouts={})
+
+    rewrite_execution_commands(topology_class)
+    opts = blobstore_options("myproject-venv-abc123_tar_gz")
+
+    localname = opts["topology.blobstore.map"]["myproject-venv-abc123_tar_gz"][
+        "localname"
+    ]
+    assert shell.execution_command == f"../{localname}/bin/pystorm_a8c_run"
+    assert opts["topology.environment"]["PATH"].startswith(f"../{localname}/bin:")
 
 
 def test_the_script_is_left_alone_when_rewriting():
@@ -55,9 +75,7 @@ def test_the_script_is_left_alone_when_rewriting():
     bolt, shell = shell_bolt()
     topology_class = SimpleNamespace(thrift_bolts={"b": bolt}, thrift_spouts={})
 
-    rewrite_execution_commands(
-        topology_class, virtualenv_root="..", virtualenv_name="venv"
-    )
+    rewrite_execution_commands(topology_class)
 
     assert shell.script == "mypkg.mod.MyBolt"
 
@@ -68,9 +86,7 @@ def test_a_foreign_execution_command_is_not_rewritten():
     bolt, shell = shell_bolt(execution_command="/usr/bin/node")
     topology_class = SimpleNamespace(thrift_bolts={"b": bolt}, thrift_spouts={})
 
-    rewrite_execution_commands(
-        topology_class, virtualenv_root="..", virtualenv_name="venv"
-    )
+    rewrite_execution_commands(topology_class)
 
     assert shell.execution_command == "/usr/bin/node"
 
@@ -165,19 +181,55 @@ def test_submit_has_no_user_hooks():
     assert "fabfile" not in source
 
 
-def test_install_virtualenv_is_accepted_and_ignored(capsys):
-    """casterisk passes `-o install_virtualenv=0`; the flag has no code left."""
-    from pystorm_a8c.cli.submit import check_install_virtualenv
+def test_a_retired_option_is_refused_with_its_reason():
+    """Refused, not ignored. casterisk used to pass `-o install_virtualenv=0`."""
+    from pystorm_a8c.cli.submit import check_options_are_consumed
 
-    check_install_virtualenv({"install_virtualenv": 0})
-    assert capsys.readouterr().err == ""
+    with pytest.raises(ValueError) as exc:
+        check_options_are_consumed({"install_virtualenv": 0}, "-o options")
+
+    assert "install_virtualenv" in str(exc.value)
+    assert "blobstore" in str(exc.value)
 
 
-def test_a_truthy_install_virtualenv_warns(capsys):
-    from pystorm_a8c.cli.submit import check_install_virtualenv
+def test_a_derived_option_cannot_be_set_by_hand():
+    from pystorm_a8c.cli.submit import check_options_are_consumed
 
-    check_install_virtualenv({"install_virtualenv": 1})
-    assert "install_virtualenv" in capsys.readouterr().err
+    with pytest.raises(ValueError) as exc:
+        check_options_are_consumed({"topology.environment": {}}, "-o options")
+
+    assert "--venv-blobstore-key" in str(exc.value)
+
+
+def test_an_unknown_bare_option_is_refused():
+    """A bare word is addressed to us, and we have nothing left it could mean."""
+    from pystorm_a8c.cli.submit import check_options_are_consumed
+
+    with pytest.raises(ValueError) as exc:
+        check_options_are_consumed({"virtualenv_flgas": "typo"}, "-o options")
+
+    assert "virtualenv_flgas" in str(exc.value)
+
+
+def test_dotted_storm_conf_keys_pass_through():
+    from pystorm_a8c.cli.submit import check_options_are_consumed
+
+    check_options_are_consumed(
+        {"topology.workers": 4, "storm.zookeeper.port": 2181, "pystorm.log.level": "x"},
+        "-o options",
+    )
+
+
+def test_every_offending_option_is_named_at_once():
+    from pystorm_a8c.cli.submit import check_options_are_consumed
+
+    with pytest.raises(ValueError) as exc:
+        check_options_are_consumed(
+            {"use_virtualenv": 1, "virtualenv_flags": "-p x"}, "-o options"
+        )
+
+    assert "use_virtualenv" in str(exc.value)
+    assert "virtualenv_flags" in str(exc.value)
 
 
 def test_upload_jar_chunks_the_whole_file(tmp_path):
@@ -282,12 +334,8 @@ def test_the_submit_parser_accepts_the_flags_casterisk_deploys_with():
             "-f",
             "--wait",
             "30",
-            "-o",
-            "install_virtualenv=0",
-            "-o",
-            "virtualenv_name=venv",
-            "-o",
-            'topology.blobstore.map={"k_tar_gz":{"localname":"venv"}}',
+            "--venv-blobstore-key",
+            "myproject-venv-abc123_tar_gz",
             "-o",
             "topology.max.spout.pending=200",
         ]
@@ -299,12 +347,31 @@ def test_the_submit_parser_accepts_the_flags_casterisk_deploys_with():
     assert args.force is True
     assert args.wait == 30
     assert args.active is True
-    assert args.options == {
-        "install_virtualenv": 0,
-        "virtualenv_name": "venv",
-        "topology.blobstore.map": {"k_tar_gz": {"localname": "venv"}},
-        "topology.max.spout.pending": 200,
-    }
+    assert args.venv_blobstore_key == "myproject-venv-abc123_tar_gz"
+    # The four venv -o flags this used to carry are derived now.
+    assert args.options == {"topology.max.spout.pending": 200}
+
+
+def test_the_venv_blobstore_key_is_required():
+    """There is no worker layout without a venv, so there is no default."""
+    import argparse
+
+    from pystorm_a8c.cli import submit
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers()
+    submit.subparser_hook(subparsers)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["submit", "-n", "raws"])
+
+
+def test_submit_topology_refuses_an_empty_key():
+    """Belt and braces for library callers, who do not go through argparse."""
+    from pystorm_a8c.cli.submit import submit_topology
+
+    with pytest.raises(ValueError, match="venv_blobstore_key is required"):
+        submit_topology("")
 
 
 def test_the_removed_flags_are_really_removed():

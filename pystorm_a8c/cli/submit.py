@@ -33,17 +33,46 @@ THRIFT_CHUNK_SIZE = 307200
 
 RUN_COMMAND = "pystorm_a8c_run"
 
-#: Options that configure the virtualenv the workers run out of. They are
-#: passed through to the topology conf untouched; nothing in this package
-#: creates or updates a virtualenv any more (that is the deploy script's job,
-#: via the Storm blobstore).
-VIRTUALENV_OPTIONS = (
-    "install_virtualenv",
-    "use_virtualenv",
-    "virtualenv_flags",
-    "virtualenv_root",
-    "virtualenv_name",
-)
+#: Where the blobstore drops the virtualenv, and what it is called there.
+#:
+#: These are constants, not settings. Storm starts the multi-lang subprocess
+#: with its cwd already inside the unpacked ``resources/``, so ``..`` is the
+#: worker directory -- which is where the blobstore extracts ``localname``.
+#: Every piece of the deploy has to agree on this one path, so it is derived
+#: in one place rather than assembled from options that could disagree.
+VIRTUALENV_NAME = "venv"
+VIRTUALENV_ROOT = ".."
+VIRTUALENV_BIN = f"{VIRTUALENV_ROOT}/{VIRTUALENV_NAME}/bin"
+
+#: PATH the workers run with. The venv's bin comes first so the component's
+#: interpreter and console scripts win over anything on the supervisor.
+WORKER_PATH = f"{VIRTUALENV_BIN}:/usr/local/bin:/usr/bin:/bin"
+
+#: Storm conf keys that ``--venv-blobstore-key`` derives. Passing any of them
+#: by hand is refused rather than merged: two sources for one path is how the
+#: execution command and the blobstore localname drift apart.
+DERIVED_OPTIONS = {
+    "virtualenv_name": "set to {!r} by --venv-blobstore-key".format(VIRTUALENV_NAME),
+    "virtualenv_root": "set to {!r} by --venv-blobstore-key".format(VIRTUALENV_ROOT),
+    "topology.blobstore.map": "built from --venv-blobstore-key",
+    "topology.environment": "built from --venv-blobstore-key",
+}
+
+#: Options this package used to act on and no longer does. Refused with the
+#: reason, rather than accepted and quietly ignored.
+RETIRED_OPTIONS = {
+    "install_virtualenv": (
+        "nothing here builds a virtualenv any more -- the blobstore ships one"
+    ),
+    "use_virtualenv": "always on; there is no non-virtualenv worker layout",
+    "virtualenv_flags": (
+        "these were flags for the `virtualenv` command this package used to run "
+        "over SSH"
+    ),
+    "use_ssh_for_nimbus": "Nimbus is always contacted directly",
+}
+# `serializer` is deliberately absent: it is still consumed, by
+# util.set_topology_serializer, which accepts "json" and refuses anything else.
 
 
 # ------------------------------------------------------------ -o parsing
@@ -85,12 +114,67 @@ class _StoreDictAction(argparse.Action):
         setattr(namespace, self.dest, items)
 
 
+def blobstore_options(venv_blobstore_key):
+    """The Storm settings that put a virtualenv on every worker.
+
+    ``bin/topo-submit`` used to spell these out as four ``-o`` flags whose
+    values had to agree with each other -- the blobstore ``localname``, the
+    ``PATH``, and the two virtualenv keys all encode the same path. Deriving
+    them from the one key that actually varies removes the chance to get that
+    agreement wrong.
+    """
+    return {
+        "virtualenv_name": VIRTUALENV_NAME,
+        "virtualenv_root": VIRTUALENV_ROOT,
+        "topology.blobstore.map": {
+            venv_blobstore_key: {"localname": VIRTUALENV_NAME, "uncompress": True}
+        },
+        "topology.environment": {"PATH": WORKER_PATH},
+    }
+
+
+def check_options_are_consumed(options, source):
+    """Refuse any option this package will not act on.
+
+    Storm conf keys are dotted -- ``topology.*``, ``storm.*``, ``pystorm.*`` --
+    and are forwarded to Nimbus untouched. A bare word is addressed to
+    ``pystorm-a8c`` itself, and after the virtualenv settings became constants
+    there is nothing left for one to mean. Silently passing it on is how
+    ``virtualenv_flags`` sat in the topology conf for years doing nothing.
+
+    :param source: where these options came from, for the error message.
+    """
+    problems = []
+    for key in sorted(options or {}):
+        if key in DERIVED_OPTIONS:
+            problems.append(f"{key} ({DERIVED_OPTIONS[key]})")
+        elif key in RETIRED_OPTIONS:
+            problems.append(f"{key} ({RETIRED_OPTIONS[key]})")
+        elif "." not in key:
+            problems.append(f"{key} (not a Storm conf key, and not one of ours)")
+    if problems:
+        raise ValueError(
+            f"Unsupported {source}: {'; '.join(problems)}. Storm conf keys are "
+            f"dotted and pass through untouched; the virtualenv is configured "
+            f"by --venv-blobstore-key alone."
+        )
+
+
 def resolve_options(
-    cli_options, env_config, topology_class, topology_name, local_only=False
+    cli_options,
+    env_config,
+    topology_class,
+    topology_name,
+    local_only=False,
+    venv_blobstore_key=None,
 ):
     """Resolve potentially conflicting Storm options from three sources:
 
     CLI options > Topology options > config.json options
+
+    The settings derived from ``venv_blobstore_key`` are applied last of all,
+    because nothing else is allowed to set them -- see
+    :func:`check_options_are_consumed`.
 
     :param local_only: Whether or not we should talk to Nimbus to get Storm
                        workers and other info.
@@ -103,20 +187,32 @@ def resolve_options(
        ``get_storm_workers`` would mean changing its signature, and
        casterisk-realtime's conftest.py replaces that function.
     """
+    check_options_are_consumed(env_config.get("options"), "options in config.json")
+    # The env block carries these as plain keys rather than under `options`.
+    # DERIVED_OPTIONS is included because config.json really does set
+    # `virtualenv_root`: without this it would be silently ignored, which is
+    # the failure mode this check exists to prevent.
+    check_options_are_consumed(
+        {
+            k: v
+            for k, v in env_config.items()
+            if k in RETIRED_OPTIONS or k in DERIVED_OPTIONS
+        },
+        "keys in the config.json env block",
+    )
+    check_options_are_consumed(topology_class.config, "Topology.config entries")
+    check_options_are_consumed(cli_options, "-o options")
+
     storm_options = {}
 
     # Start with environment options
     storm_options.update(env_config.get("options", {}))
 
-    # Set topology.python.path
-    if env_config.get("use_virtualenv", True):
-        # Upstream raw-subscripted virtualenv_root, so an env config without
-        # the key crashed the submit before it ever reached Nimbus.
-        virtualenv_root = env_config.get("virtualenv_root", "..")
-        python_path = "/".join([virtualenv_root, topology_name, "bin", "python"])
-        # This setting is for information purposes only, and is not actually
-        # read by any pystorm-a8c code.
-        storm_options["topology.python.path"] = python_path
+    # Set topology.python.path. Built from the same constants as the execution
+    # command, so the two cannot name different directories -- they used to,
+    # whenever virtualenv_name was set, because this line used the topology
+    # name instead. Informational only; no pystorm-a8c code reads it.
+    storm_options["topology.python.path"] = f"{VIRTUALENV_BIN}/python"
 
     # Set logging options based on environment config.
     #
@@ -136,16 +232,16 @@ def resolve_options(
     if isinstance(log_config.get("level"), str):
         storm_options["pystorm.log.level"] = log_config["level"].lower()
 
-    # Make sure virtualenv options are present here
-    for venv_option in VIRTUALENV_OPTIONS:
-        if venv_option in env_config:
-            storm_options[venv_option] = env_config[venv_option]
-
     # Override options with topology options
     storm_options.update(topology_class.config)
 
     # Override options with CLI options
     storm_options.update(cli_options or {})
+
+    # The venv wiring goes on last and is not overridable: every other source
+    # was just checked for these keys and refused.
+    if venv_blobstore_key is not None:
+        storm_options.update(blobstore_options(venv_blobstore_key))
 
     # Set log level to debug if topology.debug is set
     if storm_options.get("topology.debug", False):
@@ -174,32 +270,16 @@ def resolve_options(
 # ------------------------------------------------------ topology mangling
 
 
-def check_install_virtualenv(options):
-    """Warn if a config still asks this package to build a virtualenv.
+def rewrite_execution_commands(topology_class):
+    """Point every shell component at the entry point inside the venv.
 
-    ``install_virtualenv`` used to drive an SSH fan-out that pip-installed a
-    virtualenv on every supervisor. That is now the deploy script's job, via a
-    tarball in the Storm blobstore, so the option is accepted (casterisk passes
-    ``-o install_virtualenv=0``) but there is no code left to honor it. Saying
-    so is better than appearing to install a venv that never appears.
+    Produces ``"../venv/bin/pystorm_a8c_run"``, matching the blobstore
+    ``localname`` and the PATH that :func:`blobstore_options` sets, because all
+    three are built from the same constants. This is the a8c deploy mechanism;
+    the path has to line up with the venv tarball that was uploaded under
+    ``--venv-blobstore-key``.
     """
-    if options.get("install_virtualenv"):
-        warn(
-            "install_virtualenv is set but is no longer supported: virtualenvs "
-            "are shipped to workers through the Storm blobstore. Set "
-            "install_virtualenv=0 to silence this."
-        )
-
-
-def rewrite_execution_commands(topology_class, virtualenv_root, virtualenv_name):
-    """Point every shell component at the interpreter inside the venv.
-
-    With ``virtualenv_root=".."`` and ``virtualenv_name="venv"`` this produces
-    ``"../venv/bin/pystorm_a8c_run"``, matching the blobstore ``localname`` and
-    the PATH set via ``-o topology.environment``. This is the a8c deploy
-    mechanism; the path has to line up with what ``bin/topo-submit`` uploads.
-    """
-    run_path = "/".join([virtualenv_root, virtualenv_name, "bin", RUN_COMMAND])
+    run_path = f"{VIRTUALENV_BIN}/{RUN_COMMAND}"
     shells = chain(
         (b.bolt_object.shell for b in topology_class.thrift_bolts.values()),
         (s.spout_object.shell for s in topology_class.thrift_spouts.values()),
@@ -335,6 +415,7 @@ def _submit_topology(
 
 
 def submit_topology(
+    venv_blobstore_key,
     name=None,
     env_name=None,
     options=None,
@@ -347,7 +428,17 @@ def submit_topology(
     config_file=None,
     active=True,
 ):
-    """Submit a topology to a remote Storm cluster."""
+    """Submit a topology to a remote Storm cluster.
+
+    :param venv_blobstore_key: blobstore key of the virtualenv tarball the
+                               workers run out of. Required: there is no
+                               worker layout without one.
+    """
+    if not venv_blobstore_key:
+        raise ValueError(
+            "venv_blobstore_key is required: workers run out of a virtualenv "
+            "delivered by the Storm blobstore, and the key names the tarball."
+        )
     config = get_config(config_file=config_file)
     name, topology_file = get_topology_definition(name, config_file=config_file)
     env_name, env_config = get_env_config(env_name, config_file=config_file)
@@ -359,17 +450,16 @@ def submit_topology(
         local_jar_path = None
 
     # Handle option conflicts
-    options = resolve_options(options, env_config, topology_class, override_name)
+    options = resolve_options(
+        options,
+        env_config,
+        topology_class,
+        override_name,
+        venv_blobstore_key=venv_blobstore_key,
+    )
 
-    check_install_virtualenv(options)
-
-    # If using virtualenv, make sure paths are correct in specs
-    if options.get("use_virtualenv", True):
-        rewrite_execution_commands(
-            topology_class,
-            virtualenv_root=env_config.get("virtualenv_root", ".."),
-            virtualenv_name=options.get("virtualenv_name", override_name),
-        )
+    # Point the specs at the venv the blobstore is about to deliver.
+    rewrite_execution_commands(topology_class)
 
     # In case we're overriding things, let's save the original name
     options["topology.original_name"] = name
@@ -472,8 +562,21 @@ def subparser_hook(subparsers):
         "--option",
         dest="options",
         action=_StoreDictAction,
-        help='Topology option to pass on to Storm, e.g. "-o topology.debug=true".'
-        " May be repeated for multiple options.",
+        help='Storm conf setting, e.g. "-o topology.debug=true". May be '
+        "repeated. Keys are dotted Storm conf names and pass through "
+        "untouched; a bare word is refused, because this package no longer "
+        "has settings of its own.",
+    )
+    subparser.add_argument(
+        "--venv-blobstore-key",
+        dest="venv_blobstore_key",
+        required=True,
+        metavar="KEY",
+        help="Blobstore key of the virtualenv tarball the workers run out of. "
+        f"Sets up the blobstore map, the worker PATH, and the "
+        f"{RUN_COMMAND!r} path inside {VIRTUALENV_BIN!r} -- all of which have "
+        "to agree, which is why they are derived from this one value rather "
+        "than passed separately.",
     )
     subparser.add_argument(
         "-R",
@@ -499,6 +602,7 @@ def subparser_hook(subparsers):
 def main(args):
     """Submit a Storm topology to Nimbus."""
     submit_topology(
+        args.venv_blobstore_key,
         name=args.name,
         env_name=args.environment,
         options=args.options,
