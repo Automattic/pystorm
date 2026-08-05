@@ -1,5 +1,4 @@
 """Base bolt classes."""
-from __future__ import absolute_import, print_function, unicode_literals
 
 import logging
 import os
@@ -10,10 +9,7 @@ import threading
 import time
 from collections import defaultdict, namedtuple
 
-from six import iteritems, itervalues, reraise
-
-from .component import Component, Tuple
-
+from pystorm_a8c.component import Component, Tuple
 
 # Convert names to valid Python identifiers by replacing non-word characters
 # whitespace and leading digits with underscores.
@@ -61,20 +57,21 @@ class Bolt(Component):
     auto_ack = True
     auto_fail = True
 
-    # Using list; Bolt class and subclasses can have more than one current_tup.
-    _current_tups = []
-
     def __init__(self, *args, **kwargs):
-        super(Bolt, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._source_tuple_types = defaultdict(dict)
+        # Instance attribute, not a class attribute: a shared mutable default
+        # would be aliased across every Bolt instance in the process.
+        # Bolt and subclasses can have more than one current tuple.
+        self._current_tups = []
 
     def _setup_component(self, storm_conf, context):
         # See Component._setup_component for docs
-        super(Bolt, self)._setup_component(storm_conf, context)
+        super()._setup_component(storm_conf, context)
         # source->stream->fields requires Storm 0.10.0 or later
-        source_stream_fields = context.get("source->stream->fields", {})
-        for source, stream_fields in iteritems(source_stream_fields):
-            for stream, fields in iteritems(stream_fields):
+        source_stream_fields = context["source->stream->fields"]
+        for source, stream_fields in source_stream_fields.items():
+            for stream, fields in stream_fields.items():
                 type_name = (
                     _IDENTIFIER_RE.sub("_", source.title())
                     + _IDENTIFIER_RE.sub("_", stream.title())
@@ -82,9 +79,29 @@ class Bolt(Component):
                 )
                 self._source_tuple_types[source][stream] = namedtuple(type_name, fields)
 
+    @classmethod
+    def spec(cls, name=None, inputs=None, par=None, config=None, outputs=None):
+        """Create a topology DSL spec for this bolt.
+
+        Merged in from streamparse's Bolt layer so the two-level component
+        hierarchy collapses into one class.
+        """
+        from pystorm_a8c.dsl.bolt import ShellBoltSpec
+
+        return ShellBoltSpec(
+            cls,
+            command="pystorm_a8c_run",
+            script=f"-m {cls.__module__}",
+            name=name,
+            inputs=inputs,
+            par=par,
+            config=config,
+            outputs=outputs,
+        )
+
     @staticmethod
     def is_tick(tup):
-        """ :returns: Whether or not the given Tuple is a tick Tuple """
+        """:returns: Whether or not the given Tuple is a tick Tuple"""
         return tup.component == "__system" and tup.stream == "__tick"
 
     def read_tuple(self):
@@ -165,7 +182,7 @@ class Bolt(Component):
             anchors = self._current_tups if self.auto_anchor else []
         anchors = [a.id if isinstance(a, Tuple) else a for a in anchors]
 
-        return super(Bolt, self).emit(
+        return super().emit(
             tup,
             stream=stream,
             anchors=anchors,
@@ -284,7 +301,7 @@ class BatchingBolt(Bolt):
     ticks_between_batches = 1
 
     def __init__(self, *args, **kwargs):
-        super(BatchingBolt, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._batches = defaultdict(list)
         self._tick_counter = 0
         self._current_key = None
@@ -321,7 +338,7 @@ class BatchingBolt(Bolt):
         :returns: ``None``.
         """
         kwargs["need_task_ids"] = False
-        return super(BatchingBolt, self).emit(tup, **kwargs)
+        return super().emit(tup, **kwargs)
 
     def process_tick(self, tick_tup):
         """Increment tick counter, and call ``process_batch`` for all current
@@ -347,7 +364,7 @@ class BatchingBolt(Bolt):
         BatchingBolt and customize what mechanism causes batches to be
         processed.
         """
-        for key, batch in iteritems(self._batches):
+        for key, batch in self._batches.items():
             self._current_tups = batch
             self._current_key = key
             self.process_batch(key, batch)
@@ -397,7 +414,7 @@ class BatchingBolt(Bolt):
 
         if self.auto_fail:
             failed = set()
-            for key, batch in iteritems(self._batches):
+            for key, batch in self._batches.items():
                 # Only wipe out batches other than current for exit_on_exception
                 if self.exit_on_exception or key == self._current_key:
                     for tup in batch:
@@ -477,9 +494,11 @@ class TicklessBatchingBolt(BatchingBolt):
     secs_between_batches = 2
 
     def __init__(self, *args, **kwargs):
-        super(TicklessBatchingBolt, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.exc_info = None
-        signal.signal(signal.SIGUSR1, self._handle_worker_exception)
+        # Upstream fixed this guard for Component in 20d1d49 but never here.
+        if hasattr(signal, "SIGUSR1"):
+            signal.signal(signal.SIGUSR1, self._handle_worker_exception)
 
         iname = self.__class__.__name__
         threading.current_thread().name = "{}:main-thread".format(iname)
@@ -490,7 +509,7 @@ class TicklessBatchingBolt(BatchingBolt):
         self._batcher.start()
 
     def process_tick(self, tick_tup):
-        """ Just ack tick tuples and ignore them. """
+        """Just ack tick tuples and ignore them."""
         self.ack(tick_tup)
 
     def _batch_entry_run(self):
@@ -518,7 +537,15 @@ class TicklessBatchingBolt(BatchingBolt):
         thread which we catch here, and then raise in the main thread.
         """
         with self._batch_lock:
-            reraise(*self.exc_info)
+            if self.exc_info is None:
+                # SIGUSR1 arrived without a batcher exception behind it.
+                # signal.signal() is process-global, so the handler in effect
+                # belongs to whichever instance was constructed last -- a stray
+                # signal aimed at a sibling bolt lands here. Re-raising a
+                # TypeError about unpacking None would bury the real cause.
+                return
+            exc_type, exc_value, exc_tb = self.exc_info
+            raise exc_value.with_traceback(exc_tb)
 
     def _run(self):
         """The inside of ``run``'s infinite loop.

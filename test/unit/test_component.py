@@ -14,7 +14,6 @@ import pytest
 from pystorm_a8c.component import Component
 from pystorm_a8c.exceptions import StormWentAwayError
 
-
 log = logging.getLogger(__name__)
 
 
@@ -120,7 +119,7 @@ class ComponentTests(unittest.TestCase):
             # Incoming Tuple for bolt
             (
                 '{ "id": "-6955786537413359385", "comp": "1", "stream": "1"'
-                ', "task": 9, "tuple": ["snow white \uFFE6 the seven dwarfs"'
+                ', "task": 9, "tuple": ["snow white \uffe6 the seven dwarfs"'
                 ', "field2", 3]}\n'
             ),
             "end\n",
@@ -267,7 +266,7 @@ class ComponentTests(unittest.TestCase):
                 "id": 4,
                 "stream": "",
                 "task": 9,
-                "tuple": ["field\uFFE6", 2, 3],
+                "tuple": ["field\uffe6", 2, 3],
             },
             {"command": "log", "msg": "I am a robot monkey."},
             {"command": "next"},

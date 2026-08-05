@@ -2,27 +2,32 @@
 Tests for Bolt and its subclasses
 """
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import logging
 import unittest
 from collections import namedtuple
 from io import BytesIO
 
-import simplejson as json
+import json
 
-try:
-    from unittest import mock
-    from unittest.mock import patch
-except ImportError:
-    import mock
-    from mock import patch
+from unittest import mock
+from unittest.mock import patch
 
-from pystorm import BatchingBolt, Bolt, Tuple
-from pystorm.exceptions import StormWentAwayError
-
+from pystorm_a8c.bolt import BatchingBolt, Bolt
+from pystorm_a8c.component import Tuple
+from pystorm_a8c.exceptions import StormWentAwayError
 
 log = logging.getLogger(__name__)
+
+# Minimal handshake context for tests that stub out read_handshake. It used to
+# be `{}`, which only worked because _setup_component fell back to
+# `task->component` when `componentid` was missing and defaulted
+# `source->stream->fields` to `{}`. Both fallbacks are gone -- Storm 0.10.0+
+# always sends these keys -- so the stub has to look like a real handshake.
+HANDSHAKE_CONTEXT = {
+    "taskid": 3,
+    "componentid": "example-bolt1",
+    "source->stream->fields": {},
+}
 
 
 class BoltTests(unittest.TestCase):
@@ -218,11 +223,12 @@ class BoltTests(unittest.TestCase):
             },
         )
 
-    @patch.object(Bolt, "read_handshake", new=lambda x: ({}, {}))
+    @patch.object(Bolt, "read_handshake", new=lambda x: ({}, HANDSHAKE_CONTEXT))
     @patch.object(Bolt, "fail", autospec=True)
     @patch.object(Bolt, "_run", autospec=True)
     def test_auto_fail_on(self, _run_mock, fail_mock):
         self.bolt._current_tups = [self.tup]
+
         # Make sure _run raises an exception
         def raiser():  # lambdas can't raise
             raise Exception("borkt")
@@ -235,12 +241,13 @@ class BoltTests(unittest.TestCase):
         fail_mock.assert_called_with(self.bolt, self.tup)
         self.assertEqual(fail_mock.call_count, 1)
 
-    @patch.object(Bolt, "read_handshake", new=lambda x: ({}, {}))
+    @patch.object(Bolt, "read_handshake", new=lambda x: ({}, HANDSHAKE_CONTEXT))
     @patch.object(Bolt, "raise_exception", new=lambda *a: None)
     @patch.object(Bolt, "fail", autospec=True)
     @patch.object(Bolt, "_run", autospec=True)
     def test_auto_fail_off(self, _run_mock, fail_mock):
         self.bolt._current_tups = [self.tup]
+
         # Make sure _run raises an exception
         def raiser():  # lambdas can't raise
             log.info("Raised borkt")
@@ -464,7 +471,7 @@ class BatchingBoltTests(unittest.TestCase):
         )
         self.assertEqual(ack_mock.call_count, 2)
 
-    @patch.object(BatchingBolt, "read_handshake", new=lambda x: ({}, {}))
+    @patch.object(BatchingBolt, "read_handshake", new=lambda x: ({}, HANDSHAKE_CONTEXT))
     @patch.object(BatchingBolt, "raise_exception", new=lambda *a: None)
     @patch.object(BatchingBolt, "fail", autospec=True)
     def test_auto_fail_on(self, fail_mock):
@@ -486,7 +493,7 @@ class BatchingBoltTests(unittest.TestCase):
         )
         self.assertEqual(fail_mock.call_count, 3)
 
-    @patch.object(BatchingBolt, "read_handshake", new=lambda x: ({}, {}))
+    @patch.object(BatchingBolt, "read_handshake", new=lambda x: ({}, HANDSHAKE_CONTEXT))
     @patch.object(BatchingBolt, "raise_exception", new=lambda *a: None)
     @patch.object(BatchingBolt, "fail", autospec=True)
     def test_auto_fail_off(self, fail_mock):
@@ -501,7 +508,7 @@ class BatchingBoltTests(unittest.TestCase):
         # All waiting Tuples should have failed at this point
         self.assertListEqual(fail_mock.call_args_list, [])
 
-    @patch.object(BatchingBolt, "read_handshake", new=lambda x: ({}, {}))
+    @patch.object(BatchingBolt, "read_handshake", new=lambda x: ({}, HANDSHAKE_CONTEXT))
     @patch.object(BatchingBolt, "process_batch", autospec=True)
     @patch.object(BatchingBolt, "fail", autospec=True)
     def test_auto_fail_partial_exit_on_exception_true(
@@ -533,7 +540,7 @@ class BatchingBoltTests(unittest.TestCase):
         # started processing yet.
         self.assertEqual(fail_mock.call_count, 2)
 
-    @patch.object(BatchingBolt, "read_handshake", new=lambda x: ({}, {}))
+    @patch.object(BatchingBolt, "read_handshake", new=lambda x: ({}, HANDSHAKE_CONTEXT))
     @patch.object(BatchingBolt, "process_batch", autospec=True)
     @patch.object(BatchingBolt, "fail", autospec=True)
     def test_auto_fail_partial_exit_on_exception_false(

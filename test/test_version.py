@@ -9,9 +9,9 @@ VERSION_RE = re.compile(r"^(?P<major>\d+)\.\d+\.\d+$")
 
 
 def test_version_is_a_plain_release():
-    assert VERSION_RE.match(pystorm_a8c.__version__), (
-        f"{pystorm_a8c.__version__!r} must be MAJOR.MINOR.PATCH, e.g. 1.0.0"
-    )
+    assert VERSION_RE.match(
+        pystorm_a8c.__version__
+    ), f"{pystorm_a8c.__version__!r} must be MAJOR.MINOR.PATCH, e.g. 1.0.0"
 
 
 def test_version_carries_no_epoch_or_local_label():

@@ -43,7 +43,7 @@ class StormHandler(logging.Handler):
     """Handler that will send messages back to Storm."""
 
     def __init__(self, serializer):
-        """ Initialize handler
+        """Initialize handler
 
         :param serializer: The serializer of the component this handler is being
                            used for.
@@ -193,7 +193,7 @@ class Component:
 
     @staticmethod
     def is_heartbeat(tup):
-        """ :returns: Whether or not the given Tuple is a heartbeat """
+        """:returns: Whether or not the given Tuple is a heartbeat"""
         return tup.task == -1 and tup.stream == "__heartbeat"
 
     def _setup_component(self, storm_conf, context):

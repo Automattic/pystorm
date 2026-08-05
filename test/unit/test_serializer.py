@@ -48,7 +48,9 @@ def test_serialize_dict_emits_namedtuple_as_array():
     from collections import namedtuple
 
     Point = namedtuple("Point", "x y")
-    assert s_out(make_serializer(), {"tuple": Point(1, 2)}) == '{"tuple": [1, 2]}\nend\n'
+    assert (
+        s_out(make_serializer(), {"tuple": Point(1, 2)}) == '{"tuple": [1, 2]}\nend\n'
+    )
 
 
 def s_out(serializer, msg):
