@@ -88,14 +88,14 @@ class Bolt(Component):
         """
         from pystorm_a8c.dsl.bolt import ShellBoltSpec
 
-        # "module.ClassName", not "-m module": pystorm_a8c_run takes the target
+        # "module.ClassName", not "-m module": pystorm-a8c-run takes the target
         # as a single positional argument and splits it on the last dot to get
         # (module, class). A "-m ..." form would be rsplit into the module
         # "-m pkg.mod" and the class "ClassName", and fail to import on the
         # worker -- which nothing but a real cluster would catch.
         return ShellBoltSpec(
             cls,
-            command="pystorm_a8c_run",
+            command="pystorm-a8c-run",
             script=f"{cls.__module__}.{cls.__name__}",
             name=name,
             inputs=inputs,

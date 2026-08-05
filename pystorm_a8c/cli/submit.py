@@ -31,7 +31,7 @@ from pystorm_a8c.util import (
 
 THRIFT_CHUNK_SIZE = 307200
 
-RUN_COMMAND = "pystorm_a8c_run"
+RUN_COMMAND = "pystorm-a8c-run"
 
 #: Where the blobstore drops the virtualenv, and what it is called there.
 #:
@@ -273,7 +273,7 @@ def resolve_options(
 def rewrite_execution_commands(topology_class):
     """Point every shell component at the entry point inside the venv.
 
-    Produces ``"../venv/bin/pystorm_a8c_run"``, matching the blobstore
+    Produces ``"../venv/bin/pystorm-a8c-run"``, matching the blobstore
     ``localname`` and the PATH that :func:`blobstore_options` sets, because all
     three are built from the same constants. This is the a8c deploy mechanism;
     the path has to line up with the venv tarball that was uploaded under

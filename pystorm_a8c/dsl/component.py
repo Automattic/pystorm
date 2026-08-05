@@ -201,7 +201,7 @@ class ShellComponentSpec(ComponentSpec):
         self,
         component_cls,
         name=None,
-        command="pystorm_a8c_run",
+        command="pystorm-a8c-run",
         script=None,
         inputs=None,
         par=1,

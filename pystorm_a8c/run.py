@@ -13,7 +13,7 @@ RESOURCES_PATH = "resources"
 def main():
     """main entry point for Python bolts and spouts"""
     parser = argparse.ArgumentParser(
-        prog="pystorm_a8c_run",
+        prog="pystorm-a8c-run",
         description="Run a bolt/spout class",
         epilog="This is internal to pystorm-a8c and is used by Storm to run "
         "spout and bolt classes on each worker.",

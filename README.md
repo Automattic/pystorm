@@ -24,9 +24,9 @@ Two console scripts are installed:
 | Script | Who runs it |
 |---|---|
 | `pystorm-a8c` | You, to build and submit topologies |
-| `pystorm_a8c_run` | Storm, on each worker, to start a bolt or spout |
+| `pystorm-a8c-run` | Storm, on each worker, to start a bolt or spout |
 
-You never invoke `pystorm_a8c_run` yourself. It is what a component's
+You never invoke `pystorm-a8c-run` yourself. It is what a component's
 `execution_command` points at, and it imports the class named by `script`.
 
 ## Writing a topology
@@ -85,7 +85,7 @@ pystorm-a8c jar --src src -o .artifacts/topology.jar
 
 Zips `src/` into `resources/` inside the archive — that is the entire payload
 of a topology JAR for a pure-Python topology. Storm unpacks it into the worker
-directory and `pystorm_a8c_run` adds `resources/` to `sys.path`.
+directory and `pystorm-a8c-run` adds `resources/` to `sys.path`.
 
 Symlinked directories are followed. Timestamps are fixed, so an unchanged tree
 rebuilds byte-identically.
@@ -138,7 +138,7 @@ setting that has to agree about the path:
 |---|---|
 | `topology.blobstore.map` | `{"<KEY>": {"localname": "venv", "uncompress": true}}` |
 | `topology.environment` | `{"PATH": "../venv/bin:/usr/local/bin:/usr/bin:/bin"}` |
-| each component's `execution_command` | `../venv/bin/pystorm_a8c_run` |
+| each component's `execution_command` | `../venv/bin/pystorm-a8c-run` |
 | `virtualenv_name`, `virtualenv_root` | `venv`, `..` |
 
 `..` is the worker directory: Storm starts the multi-lang subprocess with its

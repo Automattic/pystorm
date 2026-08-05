@@ -372,23 +372,23 @@ class ShellSpecTests(unittest.TestCase):
     def test_command_defaults_to_this_packages_runner(self):
         spec = ShellBoltSpec(WordCountBolt, script="x", outputs=["word"])
         self.assertEqual(
-            spec.component_object.shell.execution_command, "pystorm_a8c_run"
+            spec.component_object.shell.execution_command, "pystorm-a8c-run"
         )
 
 
 class ExecutionCommandTests(unittest.TestCase):
-    def test_shell_spec_uses_pystorm_a8c_run(self):
+    def test_shell_spec_uses_the_run_console_script(self):
         class WordCount(Topology):
             word_spout = WordSpout.spec()
             word_bolt = WordCountBolt.spec(inputs=[word_spout])
 
         spout_shell = WordCount.thrift_spouts["word_spout"].spout_object.shell
         bolt_shell = WordCount.thrift_bolts["word_bolt"].bolt_object.shell
-        self.assertEqual(spout_shell.execution_command, "pystorm_a8c_run")
-        self.assertEqual(bolt_shell.execution_command, "pystorm_a8c_run")
+        self.assertEqual(spout_shell.execution_command, "pystorm-a8c-run")
+        self.assertEqual(bolt_shell.execution_command, "pystorm-a8c-run")
 
     def test_script_is_a_dotted_path_the_runner_can_split(self):
-        """pystorm_a8c_run does target.rsplit(".", 1) to get (module, class).
+        """pystorm-a8c-run does target.rsplit(".", 1) to get (module, class).
 
         A "-m module" form would rsplit into module "-m pkg" and class "mod",
         and every component would fail to import on the worker -- a break that

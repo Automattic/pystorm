@@ -183,7 +183,7 @@ def set_topology_serializer(env_config, config, topology_class):
 
     Upstream prepended ``-s <serializer> `` to every component's script so that
     ``streamparse_run`` would pick a serializer module. That flag no longer
-    exists: ``pystorm_a8c_run`` speaks JSON and nothing else, so the prefix
+    exists: ``pystorm-a8c-run`` speaks JSON and nothing else, so the prefix
     would make argparse exit non-zero on every worker. Since ``config.json``
     files in the wild still carry ``"serializer": "json"``, the key is accepted
     and the script is left untouched.

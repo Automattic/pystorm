@@ -21,7 +21,7 @@ test = ["pytest>=7", "pytest-timeout>=2", "tomli>=2; python_version < '3.11'"]
 lint = ["black>=24"]
 
 [project.scripts]
-pystorm_a8c_run = "pystorm_a8c.run:main"
+pystorm-a8c-run = "pystorm_a8c.run:main"
 pystorm-a8c = "pystorm_a8c.cli:main"
 
 [tool.uv.build-backend]

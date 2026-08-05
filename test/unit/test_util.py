@@ -344,7 +344,7 @@ def test_json_serializer_does_not_touch_the_script():
     """casterisk's config.json says `"serializer": "json"`.
 
     Upstream prepended `-s json ` to every component's script. Task 8 removed
-    the `--serializer` flag from `pystorm_a8c_run`, so that prefix now makes
+    the `--serializer` flag from `pystorm-a8c-run`, so that prefix now makes
     argparse exit non-zero on every worker -- a config that has been inert for
     years would start breaking deploys. JSON is the only protocol, so the
     script is left exactly as the spec built it.

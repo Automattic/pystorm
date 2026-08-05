@@ -1,5 +1,5 @@
 """
-Tests for the pystorm_a8c_run worker entry point.
+Tests for the pystorm-a8c-run worker entry point.
 """
 
 import os
@@ -48,7 +48,7 @@ def worker_dir(tmp_path, monkeypatch):
 
 
 def test_runs_a_component_from_the_resources_directory(worker_dir, monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["pystorm_a8c_run", "mypkg.target.RunTarget"])
+    monkeypatch.setattr(sys, "argv", ["pystorm-a8c-run", "mypkg.target.RunTarget"])
     run.main()
     assert (worker_dir / "ran.txt").read_text() == "ok"
 
@@ -56,13 +56,13 @@ def test_runs_a_component_from_the_resources_directory(worker_dir, monkeypatch):
 def test_storm_sends_the_whole_command_as_one_argument(worker_dir, monkeypatch):
     # Storm passes execution_command and script as a single string, so argv
     # arrives as one blob that main() has to split itself.
-    monkeypatch.setattr(sys, "argv", ["pystorm_a8c_run", "mypkg.target.RunTarget "])
+    monkeypatch.setattr(sys, "argv", ["pystorm-a8c-run", "mypkg.target.RunTarget "])
     run.main()
     assert (worker_dir / "ran.txt").read_text() == "ok"
 
 
 def test_the_worker_directory_and_its_resources_are_both_added(worker_dir, monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["pystorm_a8c_run", "mypkg.target.RunTarget"])
+    monkeypatch.setattr(sys, "argv", ["pystorm-a8c-run", "mypkg.target.RunTarget"])
     before = list(sys.path)
     run.main()
     added = [p for p in sys.path if p not in before]
@@ -98,13 +98,13 @@ def test_runs_a_component_when_storm_starts_us_inside_resources(
     that has to work -- a bad path here is a ModuleNotFoundError at startup
     on every component of every topology.
     """
-    monkeypatch.setattr(sys, "argv", ["pystorm_a8c_run", "mypkg.target.RunTarget"])
+    monkeypatch.setattr(sys, "argv", ["pystorm-a8c-run", "mypkg.target.RunTarget"])
     run.main()
     assert (resources_cwd / "ran.txt").read_text() == "ok"
 
 
 def test_a_nonexistent_resources_subdirectory_is_not_added(resources_cwd, monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["pystorm_a8c_run", "mypkg.target.RunTarget"])
+    monkeypatch.setattr(sys, "argv", ["pystorm-a8c-run", "mypkg.target.RunTarget"])
     before = list(sys.path)
     run.main()
     added = [p for p in sys.path if p not in before]
@@ -113,7 +113,7 @@ def test_a_nonexistent_resources_subdirectory_is_not_added(resources_cwd, monkey
 
 def test_missing_component_module_fails_loudly(worker_dir, monkeypatch):
     # A typo in a spec's script must not be swallowed into a silent no-op.
-    monkeypatch.setattr(sys, "argv", ["pystorm_a8c_run", "mypkg.nope.RunTarget"])
+    monkeypatch.setattr(sys, "argv", ["pystorm-a8c-run", "mypkg.nope.RunTarget"])
     with pytest.raises(ModuleNotFoundError):
         run.main()
 
@@ -123,7 +123,7 @@ def test_serializer_option_is_gone(worker_dir, monkeypatch):
     monkeypatch.setattr(
         sys,
         "argv",
-        ["pystorm_a8c_run", "mypkg.target.RunTarget --serializer=msgpack"],
+        ["pystorm-a8c-run", "mypkg.target.RunTarget --serializer=msgpack"],
     )
     with pytest.raises(SystemExit):
         run.main()
@@ -132,7 +132,7 @@ def test_serializer_option_is_gone(worker_dir, monkeypatch):
 def test_console_script_is_installed_and_runnable():
     """The name Storm invokes on the worker must exist on PATH."""
     result = subprocess.run(
-        ["pystorm_a8c_run", "--help"], capture_output=True, text=True
+        ["pystorm-a8c-run", "--help"], capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
-    assert "pystorm_a8c_run" in result.stdout
+    assert "pystorm-a8c-run" in result.stdout

@@ -92,7 +92,7 @@ class Spout(Component):
         # "module.ClassName", not "-m module" -- see Bolt.spec.
         return ShellSpoutSpec(
             cls,
-            command="pystorm_a8c_run",
+            command="pystorm-a8c-run",
             script=f"{cls.__module__}.{cls.__name__}",
             name=name,
             par=par,

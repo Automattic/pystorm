@@ -11,12 +11,12 @@ import pytest
 from pystorm_a8c.storm import ShellComponent
 
 
-def shell_bolt(execution_command="pystorm_a8c_run", script="mypkg.mod.MyBolt"):
+def shell_bolt(execution_command="pystorm-a8c-run", script="mypkg.mod.MyBolt"):
     shell = ShellComponent(execution_command=execution_command, script=script)
     return SimpleNamespace(bolt_object=SimpleNamespace(shell=shell)), shell
 
 
-def shell_spout(execution_command="pystorm_a8c_run", script="mypkg.mod.MySpout"):
+def shell_spout(execution_command="pystorm-a8c-run", script="mypkg.mod.MySpout"):
     shell = ShellComponent(execution_command=execution_command, script=script)
     return SimpleNamespace(spout_object=SimpleNamespace(shell=shell)), shell
 
@@ -30,7 +30,7 @@ def test_execution_command_is_rewritten_to_the_venv_path():
 
     rewrite_execution_commands(topology_class)
 
-    assert shell.execution_command == "../venv/bin/pystorm_a8c_run"
+    assert shell.execution_command == "../venv/bin/pystorm-a8c-run"
 
 
 def test_spouts_are_rewritten_too():
@@ -41,7 +41,7 @@ def test_spouts_are_rewritten_too():
 
     rewrite_execution_commands(topology_class)
 
-    assert shell.execution_command == "../venv/bin/pystorm_a8c_run"
+    assert shell.execution_command == "../venv/bin/pystorm-a8c-run"
 
 
 def test_the_rewritten_path_matches_what_the_blobstore_delivers():
@@ -64,7 +64,7 @@ def test_the_rewritten_path_matches_what_the_blobstore_delivers():
     localname = opts["topology.blobstore.map"]["myproject-venv-abc123_tar_gz"][
         "localname"
     ]
-    assert shell.execution_command == f"../{localname}/bin/pystorm_a8c_run"
+    assert shell.execution_command == f"../{localname}/bin/pystorm-a8c-run"
     assert opts["topology.environment"]["PATH"].startswith(f"../{localname}/bin:")
 
 

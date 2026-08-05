@@ -12,7 +12,7 @@ class ShellSpoutSpec(ShellComponentSpec):
         self,
         component_cls,
         name=None,
-        command="pystorm_a8c_run",
+        command="pystorm-a8c-run",
         script=None,
         par=1,
         config=None,

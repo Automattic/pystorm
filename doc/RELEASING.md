@@ -71,7 +71,7 @@ print("ok")
 EOF
 
 # The name Storm invokes on the worker, and the CLI the deployer calls.
-"$V/bin/pystorm_a8c_run" --help >/dev/null && echo "pystorm_a8c_run ok"
+"$V/bin/pystorm-a8c-run" --help >/dev/null && echo "pystorm-a8c-run ok"
 "$V/bin/pystorm-a8c" --help >/dev/null && echo "pystorm-a8c ok"
 ```
 
