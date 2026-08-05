@@ -15,7 +15,7 @@ Apache Storm major line, so a breaking Python-API change is a **minor** bump.
 ## 1. Prepare
 
 ```bash
-make lint          # black --check across pystorm_a8c, streamparse, test
+make lint          # black --check across pystorm_a8c, test
 make test          # full suite
 ```
 
@@ -50,7 +50,7 @@ V=$(mktemp -d)/venv && uv venv -q "$V"
 uv pip install -q --python "$V/bin/python" dist/pystorm_a8c-<version>-py3-none-any.whl
 
 "$V/bin/python" - <<'EOF'
-import importlib.metadata as md, warnings
+import importlib.metadata as md
 print("version:", md.version("pystorm-a8c"))
 
 import pystorm_a8c
@@ -58,14 +58,15 @@ for name in ("Bolt", "Spout", "Topology", "Grouping",
              "BatchingBolt", "TicklessBatchingBolt"):
     assert hasattr(pystorm_a8c, name), name
 
-# The streamparse shim must forward to the same objects and must warn, since
-# its whole purpose is that a missed import degrades to a warning rather than
-# a crashed worker.
-with warnings.catch_warnings(record=True) as caught:
-    warnings.simplefilter("always")
+# The streamparse shim was deleted in 1.2.0, and the wheel must not carry it:
+# a stale copy left in the index would silently keep an unmigrated consumer
+# working until the day it does not.
+try:
     import streamparse
-    assert streamparse.Bolt is pystorm_a8c.Bolt
-    assert any(issubclass(c.category, DeprecationWarning) for c in caught)
+except ImportError:
+    pass
+else:
+    raise AssertionError("streamparse is importable; the shim is back")
 print("ok")
 EOF
 

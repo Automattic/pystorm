@@ -34,10 +34,14 @@ def test_version_is_static_not_dynamic():
     assert "version" not in data["project"].get("dynamic", [])
 
 
-def test_both_shipped_modules_are_declared():
-    """A module missing from `module-name` is simply absent from the wheel."""
+def test_the_shipped_module_is_declared():
+    """A module missing from `module-name` is simply absent from the wheel.
+
+    One entry, not two: the deprecated `streamparse` shim was deleted, so
+    `import streamparse` now raises ImportError rather than warning.
+    """
     module_names = load_pyproject()["tool"]["uv"]["build-backend"]["module-name"]
-    assert sorted(module_names) == ["pystorm_a8c", "streamparse"]
+    assert sorted(module_names) == ["pystorm_a8c"]
 
 
 def test_no_banned_imports_anywhere():
@@ -54,13 +58,7 @@ def test_no_banned_imports_anywhere():
         "msgpack",
     ]
     repo = pathlib.Path(__file__).resolve().parents[1]
-    # Both shipped modules, not just the main one: `streamparse/` goes into the
-    # wheel too, so a dependency smuggled in there is just as real.
-    sources = [
-        p
-        for root in ("pystorm_a8c", "streamparse")
-        for p in (repo / root).rglob("*.py")
-    ]
+    sources = list((repo / "pystorm_a8c").rglob("*.py"))
     assert sources, "found no modules to scan -- wrong path, test is vacuous"
 
     offenders = []

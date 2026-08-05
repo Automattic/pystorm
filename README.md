@@ -185,10 +185,16 @@ it.
 
 ## Migrating from `streamparse`
 
-This package ships a `streamparse` top-level module **for backward
-compatibility only**. It is a thin forwarding layer with no logic of its own.
-Every import through it emits a `DeprecationWarning` and will stop working in
-a future release. Move to the `pystorm_a8c` paths:
+There is **no `streamparse` compatibility shim**. `import streamparse` raises
+`ImportError`, and every import path has to move to `pystorm_a8c` as part of
+the same change that adopts this package. A migration that misses one is a
+failure at worker start, not a warning — grep before you deploy:
+
+```bash
+grep -rn '\bstreamparse\b' --include='*.py' .
+```
+
+The mapping is one-to-one:
 
 | Old import | New import |
 |---|---|
@@ -215,16 +221,10 @@ was deleted rather than moved:
 - `streamparse.util.prepare_topology` — copied `src/` into `_resources/` for
   the `lein` build. Gone; `pystorm-a8c jar` zips `src/` directly.
 
-To find every remaining call site, run your test suite with deprecation
-warnings promoted to errors:
-
-```bash
-python -W error::DeprecationWarning -m pytest
-```
-
-> **Removal:** the `streamparse/` package is scheduled for deletion. Its
-> `__init__.py` carries the removal checklist. Nothing inside `pystorm_a8c`
-> imports it — the dependency runs one way only, and a test enforces that.
+> **History:** `1.1.x` shipped a deprecated `streamparse` forwarding module so
+> that a consumer could migrate its imports gradually. `1.2.0` deletes it. If
+> you are moving off `1.1.x` and were still relying on the shim, do the import
+> rewrite first, then upgrade.
 
 ## What was removed and why
 
@@ -273,12 +273,12 @@ names and needed the marker.
 ### Pinning
 
 ```
-pystorm-a8c==1.1.1
+pystorm-a8c==1.2.0
 ```
 
 ### Git tags
 
-Releases are tagged `pystorm-a8c-v1.1.1`, not `v1.1.1`. This branch lives in
+Releases are tagged `pystorm-a8c-v1.2.0`, not `v1.2.0`. This branch lives in
 the `Automattic/pystorm` fork and inherits upstream pystorm's tag history,
 which already includes `v1.0.0` through `v3.1.4` — the bare names collide.
 

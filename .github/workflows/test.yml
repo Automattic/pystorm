@@ -19,5 +19,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       # Keep this list in sync with the `lint` target in the Makefile.
-      # streamparse/ ships in the wheel, so it is checked too.
-      - run: uv run --extra lint black --check pystorm_a8c streamparse test
+      - run: uv run --extra lint black --check pystorm_a8c test
