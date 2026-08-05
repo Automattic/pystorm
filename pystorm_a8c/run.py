@@ -24,11 +24,19 @@ def main():
         sys.argv = [sys.argv[0]] + sys.argv[1].split()
     args = parser.parse_args()
     mod_name, cls_name = args.target_class.rsplit(".", 1)
-    # Storm unpacks the topology JAR into the worker directory, so the
-    # component modules live under resources/. Storm <= 1.0.2 put them at the
-    # top level instead; that branch is gone, since every cluster this package
-    # targets runs 1.2.3. Appending a path that does not exist is harmless.
-    sys.path.append(os.path.join(os.getcwd(), RESOURCES_PATH))
+    # Storm unpacks the topology JAR's resources/ into the worker directory
+    # and starts us with the cwd already set to it, so the component packages
+    # are siblings of the cwd rather than children of it. Python does not put
+    # the cwd on sys.path -- only the script's own directory, which here is the
+    # venv's bin/ -- so without this the import fails on every component.
+    #
+    # The resources/ child is appended too because not every Storm layout puts
+    # us inside it; appending a directory that does not exist would be harmless
+    # but is skipped so the path stays honest.
+    sys.path.append(os.getcwd())
+    resources_path = os.path.join(os.getcwd(), RESOURCES_PATH)
+    if os.path.isdir(resources_path):
+        sys.path.append(resources_path)
     # Import module
     mod = importlib.import_module(mod_name)
     # Get class from module and run it

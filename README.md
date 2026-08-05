@@ -271,12 +271,12 @@ names and needed the marker.
 ### Pinning
 
 ```
-pystorm-a8c==1.1.0
+pystorm-a8c==1.1.1
 ```
 
 ### Git tags
 
-Releases are tagged `pystorm-a8c-v1.1.0`, not `v1.1.0`. This branch lives in
+Releases are tagged `pystorm-a8c-v1.1.1`, not `v1.1.1`. This branch lives in
 the `Automattic/pystorm` fork and inherits upstream pystorm's tag history,
 which already includes `v1.0.0` through `v3.1.4` — the bare names collide.
 

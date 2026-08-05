@@ -54,12 +54,54 @@ def test_storm_sends_the_whole_command_as_one_argument(worker_dir, monkeypatch):
     assert (worker_dir / "ran.txt").read_text() == "ok"
 
 
-def test_resources_is_the_only_path_added(worker_dir, monkeypatch):
+def test_the_worker_directory_and_its_resources_are_both_added(worker_dir, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["pystorm_a8c_run", "mypkg.target.RunTarget"])
     before = list(sys.path)
     run.main()
     added = [p for p in sys.path if p not in before]
-    assert added == [os.path.join(str(worker_dir), "resources")]
+    assert added == [str(worker_dir), os.path.join(str(worker_dir), "resources")]
+
+
+@pytest.fixture
+def resources_cwd(tmp_path, monkeypatch):
+    """The layout a real Storm 1.2.3 supervisor produces.
+
+    Storm starts the multi-lang subprocess with its working directory set to
+    ``stormdist/<topology-id>/resources`` -- the component packages are *in*
+    the cwd, not in a ``resources`` subdirectory of it. Verified against a
+    live 1.2.3 cluster.
+    """
+    pkg = tmp_path / "resources" / "mypkg"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("")
+    (pkg / "target.py").write_text(TARGET_SRC)
+    monkeypatch.chdir(tmp_path / "resources")
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.delitem(sys.modules, "mypkg", raising=False)
+    monkeypatch.delitem(sys.modules, "mypkg.target", raising=False)
+    return tmp_path / "resources"
+
+
+def test_runs_a_component_when_storm_starts_us_inside_resources(
+    resources_cwd, monkeypatch
+):
+    """Regression: appending only ``cwd/resources`` finds nothing here.
+
+    This is the layout every 1.2.3 worker actually gets, and it is the one
+    that has to work -- a bad path here is a ModuleNotFoundError at startup
+    on every component of every topology.
+    """
+    monkeypatch.setattr(sys, "argv", ["pystorm_a8c_run", "mypkg.target.RunTarget"])
+    run.main()
+    assert (resources_cwd / "ran.txt").read_text() == "ok"
+
+
+def test_a_nonexistent_resources_subdirectory_is_not_added(resources_cwd, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["pystorm_a8c_run", "mypkg.target.RunTarget"])
+    before = list(sys.path)
+    run.main()
+    added = [p for p in sys.path if p not in before]
+    assert added == [str(resources_cwd)]
 
 
 def test_missing_component_module_fails_loudly(worker_dir, monkeypatch):
