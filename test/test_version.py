@@ -1,8 +1,6 @@
 import pathlib
 import re
 
-import pytest
-
 import pystorm_a8c
 
 VERSION_RE = re.compile(r"^(?P<major>\d+)\.\d+\.\d+$")
@@ -21,7 +19,6 @@ def test_version_carries_no_epoch_or_local_label():
     assert "+" not in pystorm_a8c.__version__
 
 
-@pytest.mark.xfail(reason="pystorm_a8c.storm lands in Task 6", strict=False)
 def test_major_version_tracks_the_storm_major_line():
     # Major is spoken for by Storm compatibility: 1.x <-> Storm 1.x.
     from pystorm_a8c.storm import STORM_IDL_VERSION
