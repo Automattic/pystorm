@@ -21,6 +21,32 @@ EXCLUDED_NAMES = {".DS_Store"}
 _ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
 
 
+def _dir_key(path):
+    """``(st_dev, st_ino)`` identifying a directory, or `None` if unreadable."""
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    return (stat.st_dev, stat.st_ino)
+
+
+def _contains_itself(root, key, keys_by_path):
+    """Is ``root`` a link back to a directory it is already nested inside?
+
+    Only ``root``'s own ancestors are consulted; os.walk is top-down, so every
+    one of them has been recorded by the time we get here.
+    """
+    parent = os.path.dirname(root)
+    while parent in keys_by_path:
+        if keys_by_path[parent] == key:
+            return True
+        grandparent = os.path.dirname(parent)
+        if grandparent == parent:
+            break
+        parent = grandparent
+    return False
+
+
 def _collect(src_dir):
     """Yield (absolute_path, posix_arcname) pairs, following symlinks.
 
@@ -28,28 +54,24 @@ def _collect(src_dir):
     ``src/casterisk`` is a symlink to ``../casterisk``, and os.walk skips
     symlinked directories by default -- which yields an empty JAR.
 
-    Following links means os.walk has no loop protection of its own, so
-    directories are tracked by (st_dev, st_ino) and revisits are pruned.
-    Without that, a link pointing back up into the tree walks forever and the
-    build dies on path length rather than naming the cycle.
+    Following links leaves os.walk with no loop protection of its own, so each
+    directory is compared against its own ANCESTORS by (st_dev, st_ino) and
+    pruned if it turns out to contain itself. Ancestors only: two symlinks
+    aimed at one real directory are not a loop, and each belongs in the JAR
+    under its own name. Pruning on any earlier visit instead drops the second
+    silently -- a JAR that builds, passes the non-empty check, submits, and
+    then fails at worker start.
     """
     src_dir = pathlib.Path(src_dir)
     if not src_dir.is_dir():
         raise FileNotFoundError(f"source directory does not exist: {src_dir}")
-    seen_dirs = set()
+    keys_by_path = {}
     for root, dirs, files in os.walk(src_dir, followlinks=True):
-        try:
-            stat = os.stat(root)
-            key = (stat.st_dev, stat.st_ino)
-        except OSError:
-            key = None
-        if key is not None:
-            if key in seen_dirs:
-                # Already packaged under an earlier path: descending again
-                # would duplicate entries, or never terminate on a cycle.
-                dirs[:] = []
-                continue
-            seen_dirs.add(key)
+        key = _dir_key(root)
+        keys_by_path[root] = key
+        if key is not None and _contains_itself(root, key, keys_by_path):
+            dirs[:] = []
+            continue
         dirs[:] = sorted(d for d in dirs if d not in EXCLUDED_DIRS)
         rel_root = pathlib.PurePath(root).relative_to(src_dir)
         for name in sorted(files):

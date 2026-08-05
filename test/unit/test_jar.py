@@ -48,6 +48,27 @@ def test_a_symlink_cycle_terminates_instead_of_recursing(project):
     assert len(names) == len(set(names)), "cycle produced duplicate entries"
 
 
+def test_two_symlinks_to_one_directory_are_both_packaged(project):
+    """Not a cycle: each link is a distinct package name the worker imports.
+
+    An earlier cycle guard pruned by "already visited" rather than "contains
+    itself" and silently dropped the second -- a JAR that submits fine and
+    then fails at worker start.
+    """
+    shared = project / "shared"
+    shared.mkdir()
+    (shared / "m.py").write_text("x = 1\n")
+    (project / "src" / "alpha").symlink_to(shared, target_is_directory=True)
+    (project / "src" / "beta").symlink_to(shared, target_is_directory=True)
+
+    out = build_jar(src_dir=project / "src", output_path=project / "topology.jar")
+
+    with zipfile.ZipFile(out) as zf:
+        names = zf.namelist()
+    assert "resources/alpha/m.py" in names
+    assert "resources/beta/m.py" in names
+
+
 def test_jar_is_never_empty(project):
     """An empty JAR submits fine and fails at worker start -- fail here instead."""
     out = build_jar(src_dir=project / "src", output_path=project / "topology.jar")
