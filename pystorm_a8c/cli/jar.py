@@ -22,11 +22,13 @@ _ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
 
 
 def _dir_key(path):
-    """``(st_dev, st_ino)`` identifying a directory, or `None` if unreadable."""
-    try:
-        stat = os.stat(path)
-    except OSError:
-        return None
+    """``(st_dev, st_ino)`` identifying a directory.
+
+    An OSError here propagates: a source tree we cannot stat is a broken build,
+    and swallowing it dropped the directory out of cycle detection and then
+    walked it anyway.
+    """
+    stat = os.stat(path)
     return (stat.st_dev, stat.st_ino)
 
 
@@ -69,7 +71,7 @@ def _collect(src_dir):
     for root, dirs, files in os.walk(src_dir, followlinks=True):
         key = _dir_key(root)
         keys_by_path[root] = key
-        if key is not None and _contains_itself(root, key, keys_by_path):
+        if _contains_itself(root, key, keys_by_path):
             dirs[:] = []
             continue
         dirs[:] = sorted(d for d in dirs if d not in EXCLUDED_DIRS)

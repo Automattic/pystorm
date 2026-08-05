@@ -200,11 +200,13 @@ retired virtualenv keys — `install_virtualenv`, `use_virtualenv`,
 `virtualenv_flags`, `virtualenv_root`, `virtualenv_name` — are refused the same
 way, wherever they appear.
 
-`log.path`, `log.file`, `log.max_bytes` and `log.backup_count` are likewise
-accepted and **ignored**, with a warning. They configured a rotating file
-handler on the worker; components now log through `StormHandler` into Storm's
-own logs, so there is no file for those settings to name. Only `log.level`
-still does anything.
+`log.path`, `log.file`, `log.max_bytes` and `log.backup_count` are refused the
+same way. They configured a rotating file handler on the worker; components now
+log through `StormHandler` into Storm's own logs, so there is no file for those
+settings to name. Only `log.level` still does anything.
+
+Every one of these failures raises rather than exiting cleanly, so a bad config
+gives you a traceback pointing at the key that is wrong.
 
 `serializer` is accepted only when set to `"json"`. Any other value is a hard
 error rather than a silent downgrade — JSON is the only wire protocol.

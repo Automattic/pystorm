@@ -9,7 +9,6 @@ worker boxes over SSH are all gone.
 
 import importlib
 import json
-import logging
 import os
 import re
 import sys
@@ -32,27 +31,8 @@ NIMBUS_ENV_VAR = "PYSTORM_A8C_NIMBUS"
 #: default of `pystorm-a8c submit --timeout`.
 DEFAULT_NIMBUS_TIMEOUT_MS = 7000
 
-log = logging.getLogger(__name__)
-
-
-def warn(msg):
-    """Print a warning to stderr.
-
-    Upstream colourized this via ``fabric.colors`` and printed to stdout, which
-    meant warnings landed in the middle of machine-readable command output.
-    """
-    print(f"warning: {msg}", file=sys.stderr)
-
-
-def die(msg, error_code=1):
-    """Print an error to stderr and exit."""
-    print(f"error: {msg}", file=sys.stderr)
-    sys.exit(error_code)
-
 
 # ---------------------------------------------------------------- config
-
-_config = None
 
 
 def get_config(config_file=None):
@@ -64,34 +44,19 @@ def get_config(config_file=None):
 
     :returns: a `dict` representing the parsed config.
 
-    .. note::
-       Only the working-directory lookup is memoized. Upstream memoized every
-       call regardless of argument, so the second caller to pass an explicit
-       file silently received the first caller's config back.
+    Not memoized. A submit reads the config a handful of times and the file is
+    tiny; a module-level cache bought nothing and made the process remember a
+    config.json across calls, which is wrong anywhere but a one-shot CLI.
     """
-    global _config
-
     if config_file is None:
-        if _config is not None:
-            return _config
-        if not os.path.exists("config.json"):
-            die(
-                "No config.json found. You must run this command inside a "
-                "topology project directory."
-            )
-        with open("config.json") as fp:
-            _config = json.load(fp)
-        return _config
+        config_file = "config.json"
 
     if isinstance(config_file, (str, bytes, os.PathLike)):
         with open(config_file) as fp:
             return json.load(fp)
     # A caller that hands us an open handle usually hands us the same one to
     # several of the functions below; rewind so the second read is not empty.
-    try:
-        config_file.seek(0)
-    except (AttributeError, OSError):
-        pass
+    config_file.seek(0)
     return json.load(config_file)
 
 
@@ -99,7 +64,7 @@ def get_topology_definition(topology_name=None, config_file=None):
     """Fetch a topology name and definition file.
 
     If ``topology_name`` is None and only one topology definition exists, that
-    one is selected; otherwise this dies rather than guess.
+    one is selected; otherwise this raises rather than guess.
 
     :param topology_name: the name of the topology (without the .py extension).
     :param config_file: see :func:`get_config`.
@@ -111,9 +76,11 @@ def get_topology_definition(topology_name=None, config_file=None):
     if topology_name is None:
         topology_files = glob(f"{topology_path}/*.py")
         if not topology_files:
-            die(f"No topology definitions are defined in {topology_path}.")
+            raise FileNotFoundError(
+                f"No topology definitions are defined in {topology_path}."
+            )
         if len(topology_files) > 1:
-            die(
+            raise ValueError(
                 f"Found more than one topology definition file in "
                 f"{topology_path}. When more than one topology definition file "
                 f"exists, you must explicitly specify the topology by name "
@@ -124,7 +91,7 @@ def get_topology_definition(topology_name=None, config_file=None):
     else:
         topology_file = f"{os.path.join(topology_path, topology_name)}.py"
         if not os.path.exists(topology_file):
-            die(
+            raise FileNotFoundError(
                 f"Topology definition file not found {topology_file}. You need "
                 f"to create a topology definition file first."
             )
@@ -136,7 +103,7 @@ def get_env_config(env_name=None, config_file=None):
     """Fetch an environment name and config object from config.json.
 
     If ``env_name`` is None and only one environment exists, that one is
-    selected; otherwise this dies rather than guess.
+    selected; otherwise this raises rather than guess.
 
     :param config_file: see :func:`get_config`.
 
@@ -150,13 +117,15 @@ def get_env_config(env_name=None, config_file=None):
     if env_name is None and len(config["envs"]) == 1:
         env_name = list(config["envs"].keys())[0]
     elif env_name is None and len(config["envs"]) > 1:
-        die(
+        raise ValueError(
             "Found more than one environment in config.json. When more than "
             "one environment exists, you must explicitly specify the "
             "environment name via the -e or --environment flags."
         )
     if env_name not in config["envs"]:
-        die(f'Could not find a "{env_name}" in config.json, have you specified one?')
+        raise ValueError(
+            f'Could not find a "{env_name}" in config.json, have you specified one?'
+        )
 
     return (env_name, config["envs"][env_name])
 
@@ -193,15 +162,13 @@ def set_topology_serializer(env_config, config, topology_class):
     """
     serializer = env_config.get("serializer", config.get("serializer", None))
     if serializer is not None and serializer != "json":
-        die(
+        raise ValueError(
             f'Unsupported serializer "{serializer}". pystorm-a8c speaks JSON '
             f"only; remove the serializer key from config.json."
         )
 
 
 # ---------------------------------------------------------------- Nimbus
-
-_storm_workers = {}
 
 
 def get_nimbus_host_port(env_config):
@@ -213,18 +180,7 @@ def get_nimbus_host_port(env_config):
     :type env_config: `dict`
 
     :returns: (host, port)
-
-    .. note::
-       ``use_ssh_for_nimbus`` in config.json is accepted for backwards
-       compatibility and ignored, but warns. Nimbus is always contacted
-       directly. A stale config that still sets the key would otherwise look
-       like it is tunneling when it is not.
     """
-    if "use_ssh_for_nimbus" in env_config:
-        log.warning(
-            "use_ssh_for_nimbus is set in the env config and is ignored: "
-            "pystorm-a8c always contacts Nimbus directly. Remove the key."
-        )
     nimbus = os.environ.get(NIMBUS_ENV_VAR) or env_config.get("nimbus")
     if not nimbus:
         raise ValueError("No nimbus host specified in env config or environment")
@@ -262,8 +218,7 @@ def get_nimbus_client(env_config=None, host=None, port=None, timeout=None):
 def get_storm_workers(env_config):
     """Return the list of supervisor hosts.
 
-    Uses ``workers`` from config.json when present; otherwise asks Nimbus and
-    memoizes the answer per (host, port).
+    Uses ``workers`` from config.json when present; otherwise asks Nimbus.
 
     .. note::
        The name and signature are part of an external contract:
@@ -276,12 +231,8 @@ def get_storm_workers(env_config):
     workers = env_config.get("workers")
     if workers:
         return workers
-    host, port = get_nimbus_host_port(env_config)
-    if (host, port) not in _storm_workers:
-        client = get_nimbus_client(env_config, host=host, port=port)
-        cluster_info = client.getClusterInfo()
-        _storm_workers[(host, port)] = [s.host for s in cluster_info.supervisors]
-    return _storm_workers[(host, port)]
+    client = get_nimbus_client(env_config)
+    return [s.host for s in client.getClusterInfo().supervisors]
 
 
 def nimbus_storm_version(nimbus_client):
@@ -289,14 +240,15 @@ def nimbus_storm_version(nimbus_client):
 
     Returning a tuple rather than a ``pkg_resources`` version object is what
     lets ``setuptools`` stay out of the runtime dependency set.
+
+    A failure here propagates. It used to be swallowed into ``(0, 0, 0)`` for
+    the sake of Storm < 0.10.0, which has no ``getVersion`` and which this
+    package does not support -- so in practice the only things it caught were
+    timeouts, auth failures and wrong hosts, reported as "ancient Storm" and
+    silently skipping the topology-name check downstream.
     """
-    try:
-        raw = nimbus_client.getVersion()
-    except Exception:
-        # Storm < 0.10.0 has no getVersion; treat as oldest supported.
-        return (0, 0, 0)
     parts = []
-    for chunk in str(raw).split("."):
+    for chunk in str(nimbus_client.getVersion()).split("."):
         digits = "".join(c for c in chunk if c.isdigit())
         parts.append(int(digits) if digits else 0)
     return tuple(parts)

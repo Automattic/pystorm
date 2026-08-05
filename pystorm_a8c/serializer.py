@@ -35,8 +35,11 @@ class JSONSerializer:
             return io.TextIOWrapper(stream.buffer, encoding="utf-8")
         if hasattr(stream, "readable"):
             return io.TextIOWrapper(stream, encoding="utf-8")
-        log.error("Could not wrap %r in a UTF-8 TextIOWrapper", stream)
-        return stream
+        raise TypeError(
+            f"Cannot wrap {stream!r} as UTF-8: it has neither .buffer nor "
+            f".readable. Returning it unwrapped would mis-encode every tuple "
+            f"on the multi-lang wire."
+        )
 
     def read_message(self):
         """Read one complete multi-lang message.

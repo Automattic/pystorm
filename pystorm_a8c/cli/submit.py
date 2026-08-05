@@ -26,7 +26,6 @@ from pystorm_a8c.util import (
     get_topology_from_file,
     nimbus_storm_version,
     set_topology_serializer,
-    warn,
 )
 
 THRIFT_CHUNK_SIZE = 307200
@@ -48,31 +47,25 @@ VIRTUALENV_BIN = f"{VIRTUALENV_ROOT}/{VIRTUALENV_NAME}/bin"
 #: interpreter and console scripts win over anything on the supervisor.
 WORKER_PATH = f"{VIRTUALENV_BIN}:/usr/local/bin:/usr/bin:/bin"
 
-#: Storm conf keys that ``--venv-blobstore-key`` builds outright. Passing one
-#: by hand is refused rather than merged: two sources for one path is how the
-#: execution command and the blobstore localname drift apart.
-DERIVED_OPTIONS = {
+#: Options this package will not act on, and the reason. Refused wherever they
+#: appear -- `-o`, the config.json env block, its `options` block, or a
+#: Topology's `config` -- rather than accepted and quietly dropped.
+UNSUPPORTED_OPTIONS = {
     "topology.blobstore.map": "built from --venv-blobstore-key",
-}
-
-#: Options this package used to act on and no longer does. Refused with the
-#: reason, rather than accepted and quietly ignored.
-_FIXED_VENV_PATH = (
-    f"the venv is always unpacked as {VIRTUALENV_BIN.rsplit('/', 1)[0]!r} and is "
-    f"not configurable; name the tarball with --venv-blobstore-key"
-)
-RETIRED_OPTIONS = {
-    "install_virtualenv": (
-        "nothing here builds a virtualenv any more -- the blobstore ships one"
-    ),
+    "install_virtualenv": "nothing here builds a virtualenv; the blobstore ships one",
     "use_virtualenv": "always on; there is no non-virtualenv worker layout",
-    "virtualenv_flags": (
-        "these were flags for the `virtualenv` command this package used to run "
-        "over SSH"
-    ),
-    "virtualenv_name": _FIXED_VENV_PATH,
-    "virtualenv_root": _FIXED_VENV_PATH,
+    "virtualenv_flags": "flags for a `virtualenv` command this package no longer runs",
+    "virtualenv_name": f"the venv is always {VIRTUALENV_ROOT}/{VIRTUALENV_NAME}",
+    "virtualenv_root": f"the venv is always {VIRTUALENV_ROOT}/{VIRTUALENV_NAME}",
     "use_ssh_for_nimbus": "Nimbus is always contacted directly",
+    # A config.json `log` block is checked with its keys prefixed, so these
+    # name `log.path`, `log.file` and so on. Only `log.level` survives: the
+    # rest configured a RotatingFileHandler the worker no longer installs, so
+    # they named a destination nothing would ever write to.
+    "log_path": "worker logging goes to Storm's own logs via StormHandler",
+    "log_file": "worker logging goes to Storm's own logs via StormHandler",
+    "log_max_bytes": "there is no rotating file handler on the worker to size",
+    "log_backup_count": "there is no rotating file handler on the worker to rotate",
 }
 # `serializer` is deliberately absent: it is still consumed, by
 # util.set_topology_serializer, which accepts "json" and refuses anything else.
@@ -179,10 +172,8 @@ def check_options_are_consumed(options, source):
     """
     problems = []
     for key in sorted(options or {}):
-        if key in DERIVED_OPTIONS:
-            problems.append(f"{key} ({DERIVED_OPTIONS[key]})")
-        elif key in RETIRED_OPTIONS:
-            problems.append(f"{key} ({RETIRED_OPTIONS[key]})")
+        if key in UNSUPPORTED_OPTIONS:
+            problems.append(f"{key} ({UNSUPPORTED_OPTIONS[key]})")
         elif "." not in key:
             problems.append(f"{key} (not a Storm conf key, and not one of ours)")
     if problems:
@@ -193,14 +184,7 @@ def check_options_are_consumed(options, source):
         )
 
 
-def resolve_options(
-    cli_options,
-    env_config,
-    topology_class,
-    topology_name,
-    local_only=False,
-    venv_blobstore_key=None,
-):
+def resolve_options(cli_options, env_config, topology_class, venv_blobstore_key=None):
     """Resolve potentially conflicting Storm options from three sources:
 
     CLI options > Topology options > config.json options
@@ -209,59 +193,54 @@ def resolve_options(
     because nothing else is allowed to set them -- see
     :func:`check_options_are_consumed`.
 
-    :param local_only: Whether or not we should talk to Nimbus to get Storm
-                       workers and other info.
-
     .. note::
-       The worker-list lookup below runs before the submit's own Nimbus client
+       The worker-count lookup below runs before the submit's own Nimbus client
        exists, so it does not see ``--timeout``. It uses
        :data:`~pystorm_a8c.util.DEFAULT_NIMBUS_TIMEOUT_MS` instead, which is
        the same value that flag defaults to. Threading the CLI value down to
        ``get_storm_workers`` would mean changing its signature, and
        casterisk-realtime's conftest.py replaces that function.
     """
-    check_options_are_consumed(env_config.get("options"), "options in config.json")
-    # The env block carries these as plain keys rather than under `options`.
-    # DERIVED_OPTIONS is included because config.json really does set
-    # `virtualenv_root`: without this it would be silently ignored, which is
-    # the failure mode this check exists to prevent.
-    check_options_are_consumed(
-        {
-            k: v
-            for k, v in env_config.items()
-            if k in RETIRED_OPTIONS or k in DERIVED_OPTIONS
-        },
-        "keys in the config.json env block",
-    )
-    check_options_are_consumed(topology_class.config, "Topology.config entries")
-    check_options_are_consumed(cli_options, "-o options")
+    log_config = env_config.get("log", {})
+    for options, source in (
+        (env_config.get("options"), "options in config.json"),
+        # The env block carries some of these as plain keys rather than under
+        # `options`, and config.json really does set `virtualenv_root` -- so
+        # without this it would be silently ignored, which is the failure this
+        # check exists to prevent.
+        (env_config, "keys in the config.json env block"),
+        (
+            {
+                f"log_{k}": v
+                for k, v in log_config.items()
+                if f"log_{k}" in UNSUPPORTED_OPTIONS
+            },
+            "keys in the config.json log block",
+        ),
+        (topology_class.config, "Topology.config entries"),
+        (cli_options, "-o options"),
+    ):
+        check_options_are_consumed(
+            # The env block legitimately holds bare keys of its own -- nimbus,
+            # workers, log -- so only the named-unsupported ones are checked
+            # there; everywhere else a bare key is wrong by itself.
+            (
+                {k: v for k, v in options.items() if k in UNSUPPORTED_OPTIONS}
+                if options is env_config
+                else options
+            ),
+            source,
+        )
 
     storm_options = {}
 
     # Start with environment options
     storm_options.update(env_config.get("options", {}))
 
-    # Set topology.python.path. Built from the same constants as the execution
-    # command, so the two cannot name different directories -- they used to,
-    # whenever virtualenv_name was set, because this line used the topology
-    # name instead. Informational only; no pystorm-a8c code reads it.
+    # Built from the same constants as the execution command, so the two cannot
+    # name different directories. Informational only; nothing reads it.
     storm_options["topology.python.path"] = f"{VIRTUALENV_BIN}/python"
 
-    # Set logging options based on environment config.
-    #
-    # Only the level is forwarded. `path`/`file`/`max_bytes`/`backup_count`
-    # drove a RotatingFileHandler on the worker; that handler is gone --
-    # Component always logs through StormHandler now -- so passing those keys
-    # to Nimbus would advertise a destination no worker ever writes to.
-    log_config = env_config.get("log", {})
-    log_path = log_config.get("path") or env_config.get("log_path")
-    log_file = log_config.get("file") or env_config.get("log_file")
-    if log_path or log_file:
-        warn(
-            "log path/file settings are no longer supported and are being "
-            "ignored: worker logging goes to Storm's own logs via "
-            "StormHandler. Remove them from config.json."
-        )
     if isinstance(log_config.get("level"), str):
         storm_options["pystorm.log.level"] = log_config["level"].lower()
 
@@ -283,18 +262,10 @@ def resolve_options(
     if storm_options.get("topology.debug", False):
         storm_options["pystorm.log.level"] = "debug"
 
-    # If ackers and executors still aren't set, use number of worker nodes
-    if not local_only:
-        if not storm_options.get("storm.workers.list"):
-            storm_options["storm.workers.list"] = get_storm_workers(env_config)
-        elif isinstance(storm_options["storm.workers.list"], str):
-            storm_options["storm.workers.list"] = storm_options[
-                "storm.workers.list"
-            ].split(",")
-        num_storm_workers = len(storm_options["storm.workers.list"])
-    else:
-        storm_options["storm.workers.list"] = []
-        num_storm_workers = 1
+    # Default the worker and acker counts to the size of the cluster. The
+    # worker list itself is not put in the conf: nothing reads it -- it was a
+    # streamparse key for an SSH fan-out that no longer exists.
+    num_storm_workers = len(get_storm_workers(env_config))
     if storm_options.get("topology.acker.executors") is None:
         storm_options["topology.acker.executors"] = num_storm_workers
     if storm_options.get("topology.workers") is None:
@@ -490,17 +461,9 @@ def submit_topology(
     topology_class = get_topology_from_file(topology_file)
     if override_name is None:
         override_name = name
-    if remote_jar_path and local_jar_path:
-        warn("Ignoring local_jar_path because given remote_jar_path")
-        local_jar_path = None
-
     # Handle option conflicts
     options = resolve_options(
-        options,
-        env_config,
-        topology_class,
-        override_name,
-        venv_blobstore_key=venv_blobstore_key,
+        options, env_config, topology_class, venv_blobstore_key=venv_blobstore_key
     )
 
     # Point the specs at the venv the blobstore is about to deliver.
@@ -582,13 +545,6 @@ def subparser_hook(subparsers):
         dest="active",
     )
     subparser.add_argument(
-        "-j",
-        "--local_jar_path",
-        help="Path to a prebuilt JAR to upload to Nimbus. This is useful when "
-        "you have multiple topologies that all run out of the same JAR, or you "
-        "have manually created the JAR.",
-    )
-    subparser.add_argument(
         "-n",
         "--name",
         help="The name of the topology to act on. If you have only one "
@@ -623,7 +579,17 @@ def subparser_hook(subparsers):
         "to agree, which is why they are derived from this one value rather "
         "than passed separately.",
     )
-    subparser.add_argument(
+    # Mutually exclusive: passing both used to warn and silently drop -j.
+    # Reporting the conflict is argparse's job and one less branch here.
+    jar = subparser.add_mutually_exclusive_group()
+    jar.add_argument(
+        "-j",
+        "--local_jar_path",
+        help="Path to a prebuilt JAR to upload to Nimbus. This is useful when "
+        "you have multiple topologies that all run out of the same JAR, or you "
+        "have manually created the JAR.",
+    )
+    jar.add_argument(
         "-R",
         "--remote_jar_path",
         help="Path to a prebuilt JAR that already exists on your Nimbus server. "

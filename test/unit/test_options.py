@@ -70,12 +70,12 @@ def fake_topology(config=None):
     return SimpleNamespace(config=config or {})
 
 
-def resolve(cli_options=None, env_config=None, topology_config=None):
+def resolve(cli_options=None, env_config=None, topology_config=None, **kwargs):
     return resolve_options(
         cli_options,
         env_config if env_config is not None else {"workers": ["w1", "w2"]},
         fake_topology(topology_config),
-        "some_topology",
+        **kwargs,
     )
 
 
@@ -109,10 +109,13 @@ def test_workers_and_ackers_default_to_the_worker_count():
     assert options["topology.acker.executors"] == 3
 
 
-def test_a_comma_separated_worker_list_is_split():
-    """casterisk's deploy task passes `-o storm.workers.list="'a,b,c'"`."""
-    options = resolve(cli_options={"storm.workers.list": "a,b,c"})
-    assert options["storm.workers.list"] == ["a", "b", "c"]
+def test_the_worker_list_is_not_shipped_to_nimbus():
+    """It was a streamparse key for an SSH fan-out; nothing reads it now.
+
+    Only the count survives, as the default for workers and ackers.
+    """
+    options = resolve(env_config={"workers": ["w1", "w2", "w3"]})
+    assert "storm.workers.list" not in options
     assert options["topology.workers"] == 3
 
 
@@ -121,28 +124,15 @@ def test_log_config_becomes_pystorm_log_options():
     assert options["pystorm.log.level"] == "info"
 
 
-def test_file_logging_keys_are_not_forwarded_to_nimbus():
-    """The worker's RotatingFileHandler is gone; don't advertise a path.
+@pytest.mark.parametrize("key", ["path", "file"])
+def test_file_logging_keys_are_refused(key):
+    """The worker's RotatingFileHandler is gone, so these name nothing.
 
-    Forwarding these made submit print "Routing Python logging to ..." for a
-    file no worker ever creates.
+    They used to be dropped with a warning, which is the accepted-and-ignored
+    shape every other retired setting has stopped using.
     """
-    options = resolve(
-        env_config={
-            "workers": ["w1"],
-            "log": {
-                "level": "INFO",
-                "path": "/var/log/storm",
-                "file": "x.log",
-                "max_bytes": 100,
-                "backup_count": 3,
-            },
-        }
-    )
-    assert "pystorm.log.path" not in options
-    assert "pystorm.log.file" not in options
-    assert "pystorm.log.max_bytes" not in options
-    assert "pystorm.log.backup_count" not in options
+    with pytest.raises(ValueError, match="StormHandler"):
+        resolve(env_config={"workers": ["w1"], "log": {"level": "INFO", key: "x"}})
 
 
 def test_topology_debug_forces_debug_logging():
@@ -172,7 +162,6 @@ def test_the_venv_wiring_is_added_from_the_blobstore_key():
         None,
         {"workers": ["w1"]},
         fake_topology(),
-        "raws",
         venv_blobstore_key="myproject-venv-abc123_tar_gz",
     )
 
@@ -195,7 +184,6 @@ def test_extra_environment_variables_are_merged_with_the_derived_path():
         {"topology.environment": {"TZ": "UTC", "LD_LIBRARY_PATH": "/opt/lib"}},
         {"workers": ["w1"]},
         fake_topology(),
-        "raws",
         venv_blobstore_key="k_tar_gz",
     )
 
@@ -216,7 +204,6 @@ def test_a_hand_written_path_is_refused():
             {"topology.environment": {"PATH": "/usr/bin"}},
             {"workers": ["w1"]},
             fake_topology(),
-            "raws",
             venv_blobstore_key="k_tar_gz",
         )
 
@@ -229,7 +216,6 @@ def test_a_non_dict_environment_is_refused():
             {"topology.environment": "PATH=/usr/bin"},
             {"workers": ["w1"]},
             fake_topology(),
-            "raws",
             venv_blobstore_key="k_tar_gz",
         )
 
@@ -270,9 +256,7 @@ def test_sudo_user_is_gone():
     assert "sudo_user" not in resolve()
 
 
-def test_local_only_skips_nimbus():
-    options = resolve_options(
-        None, {}, fake_topology(), "some_topology", local_only=True
-    )
-    assert options["storm.workers.list"] == []
+def test_the_worker_count_comes_from_the_configured_list():
+    options = resolve(env_config={"workers": ["only-one"]})
     assert options["topology.workers"] == 1
+    assert options["topology.acker.executors"] == 1

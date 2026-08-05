@@ -8,24 +8,10 @@ from pystorm_a8c.dsl.component import ShellComponentSpec
 
 
 class ShellBoltSpec(ShellComponentSpec):
-    def __init__(
-        self,
-        component_cls,
-        name=None,
-        command="pystorm-a8c-run",
-        script=None,
-        inputs=None,
-        par=1,
-        config=None,
-        outputs=None,
-    ):
-        super().__init__(
-            component_cls,
-            name=name,
-            inputs=inputs,
-            par=par,
-            config=config,
-            outputs=outputs,
-            command=command,
-            script=script,
-        )
+    """A :class:`ShellComponentSpec` that a Topology sorts into its bolts.
+
+    No behaviour of its own. It exists as a distinct type because
+    ``TopologyType`` dispatches on ``isinstance`` to tell a bolt from a spout.
+    The ``__init__`` that used to be here re-declared all eight of the base
+    class's parameters and forwarded every one of them unchanged.
+    """

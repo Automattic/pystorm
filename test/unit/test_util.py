@@ -16,18 +16,6 @@ def write_config(tmp_path, data):
     return str(p)
 
 
-@pytest.fixture(autouse=True)
-def clear_config_memo():
-    """`get_config` memoizes the working-directory config.json process-wide."""
-    import pystorm_a8c.util as util
-
-    util._config = None
-    util._storm_workers.clear()
-    yield
-    util._config = None
-    util._storm_workers.clear()
-
-
 # ---------------------------------------------------------------- Nimbus
 
 
@@ -71,30 +59,6 @@ def test_no_ssh_anywhere_in_the_package():
     assert offenders == []
 
 
-def test_use_ssh_for_nimbus_key_is_ignored_but_warns(caplog):
-    """Legacy configs may still carry the key; it must not resurrect tunneling.
-
-    Ignoring it silently would let a stale config look like it is tunneling
-    when it is really connecting direct, so the connection is made loudly.
-    """
-    from pystorm_a8c.util import get_nimbus_host_port
-
-    with caplog.at_level(logging.WARNING):
-        host, port = get_nimbus_host_port(
-            {"nimbus": "h:6627", "use_ssh_for_nimbus": True}
-        )
-    assert (host, port) == ("h", 6627)
-    assert any("use_ssh_for_nimbus" in r.message for r in caplog.records)
-
-
-def test_use_ssh_for_nimbus_absent_does_not_warn(caplog):
-    from pystorm_a8c.util import get_nimbus_host_port
-
-    with caplog.at_level(logging.WARNING):
-        get_nimbus_host_port({"nimbus": "h:6627"})
-    assert caplog.records == []
-
-
 def test_get_storm_workers_takes_exactly_one_argument():
     """casterisk-realtime's conftest.py replaces this function.
 
@@ -119,9 +83,11 @@ def test_a_one_argument_stand_in_survives_a_submit(monkeypatch):
     monkeypatch.setattr(submit, "get_storm_workers", lambda env_config: ["w1", "w2"])
     monkeypatch.setattr(util, "get_storm_workers", lambda env_config: ["w1", "w2"])
 
-    options = submit.resolve_options(None, {}, SimpleNamespace(config={}), "topo")
+    options = submit.resolve_options(None, {}, SimpleNamespace(config={}))
 
-    assert options["storm.workers.list"] == ["w1", "w2"]
+    # The list itself is not put in the conf -- nothing reads it. Only the
+    # count survives, as the worker/acker default.
+    assert "storm.workers.list" not in options
     assert options["topology.workers"] == 2
 
 
@@ -145,8 +111,6 @@ def test_get_storm_workers_asks_nimbus_when_unconfigured(monkeypatch):
 
     monkeypatch.setattr(util, "get_nimbus_client", lambda *a, **kw: FakeClient())
     assert util.get_storm_workers({"nimbus": "h:6627"}) == ["w1", "w2"]
-    # Memoized per (host, port): a second call must not re-open an RPC client.
-    assert util.get_storm_workers({"nimbus": "h:6627"}) == ["w1", "w2"]
     assert len(calls) == 1
 
 
@@ -160,15 +124,21 @@ def test_nimbus_storm_version_parses_tuple():
     assert nimbus_storm_version(FakeClient()) == (1, 2, 3)
 
 
-def test_nimbus_storm_version_survives_old_nimbus():
-    """Storm < 0.10.0 has no getVersion; callers compare, so return a tuple."""
+def test_nimbus_storm_version_propagates_a_failure():
+    """It used to swallow everything into (0, 0, 0).
+
+    Storm < 0.10.0 has no getVersion and is not supported here, so in practice
+    that only hid timeouts, auth failures and wrong hosts -- reported as
+    "ancient Storm", which then silently skipped the topology-name check.
+    """
     from pystorm_a8c.util import nimbus_storm_version
 
-    class AncientClient:
+    class Unreachable:
         def getVersion(self):
-            raise Exception("No such method")
+            raise ConnectionRefusedError("nimbus is down")
 
-    assert nimbus_storm_version(AncientClient()) < (1, 0, 0)
+    with pytest.raises(ConnectionRefusedError):
+        nimbus_storm_version(Unreachable())
 
 
 # ---------------------------------------------------------------- config
@@ -194,7 +164,7 @@ def test_get_env_config_rejects_unknown_env(tmp_path):
     from pystorm_a8c.util import get_env_config
 
     cfg = write_config(tmp_path, {"envs": {"a": {}, "b": {}}})
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError, match="nope"):
         get_env_config("nope", config_file=cfg)
 
 
@@ -202,18 +172,14 @@ def test_get_env_config_rejects_ambiguous_env(tmp_path):
     from pystorm_a8c.util import get_env_config
 
     cfg = write_config(tmp_path, {"envs": {"a": {}, "b": {}}})
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError, match="more than one environment"):
         get_env_config(None, config_file=cfg)
 
 
-def test_an_explicit_config_file_is_never_memoized(tmp_path):
-    """The memo exists for the CLI's repeated config.json reads, nothing else.
-
-    Upstream memoized unconditionally, so the second caller to pass an explicit
-    file got the first caller's config back. That is invisible in a one-shot
-    CLI process and lethal anywhere else -- including in this test suite, where
-    it silently made every later config test assert against the first fixture.
-    """
+def test_each_call_reads_the_file_it_was_given(tmp_path):
+    """Upstream memoized unconditionally, so the second caller to pass an
+    explicit file got the first caller's config back. There is no memo at all
+    now, which is the simplest way to keep that impossible."""
     from pystorm_a8c.util import get_config
 
     first = write_config(tmp_path, {"envs": {"a": {"nimbus": "h1"}}})
@@ -236,8 +202,8 @@ def test_get_config_accepts_an_open_file(tmp_path):
 def test_an_open_file_can_be_read_more_than_once(tmp_path):
     """`submit_topology` resolves the config three times from one argument.
 
-    Without the memo, a handle read once is exhausted; the second `json.load`
-    would raise on an empty string.
+    A handle read once is exhausted, so `get_config` rewinds it; the second
+    `json.load` would otherwise raise on an empty string.
     """
     from pystorm_a8c.util import get_config, get_env_config
 
@@ -255,11 +221,11 @@ def test_get_config_reads_the_working_directory_by_default(tmp_path, monkeypatch
     assert list(get_config()["envs"]) == ["cwd-env"]
 
 
-def test_missing_config_json_dies(tmp_path, monkeypatch):
+def test_missing_config_json_raises(tmp_path, monkeypatch):
     from pystorm_a8c.util import get_config
 
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
+    with pytest.raises(FileNotFoundError):
         get_config()
 
 
@@ -287,7 +253,7 @@ def test_get_topology_definition_rejects_ambiguity(tmp_path, monkeypatch):
     cfg = write_config(tmp_path, {"topology_specs": "topologies"})
     monkeypatch.chdir(tmp_path)
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError, match="more than one topology definition"):
         get_topology_definition(config_file=cfg)
 
 
@@ -373,14 +339,14 @@ def test_a_non_json_serializer_is_refused_not_ignored():
     """Silently downgrading to JSON would mis-decode every tuple on the wire."""
     from pystorm_a8c.util import set_topology_serializer
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError, match="msgpack"):
         set_topology_serializer({"serializer": "msgpack"}, {}, make_topology_class())
 
 
 def test_env_serializer_overrides_the_project_serializer():
     from pystorm_a8c.util import set_topology_serializer
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(ValueError, match="msgpack"):
         set_topology_serializer(
             {"serializer": "msgpack"}, {"serializer": "json"}, make_topology_class()
         )
