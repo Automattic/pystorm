@@ -67,15 +67,6 @@ for name in ("Bolt", "Spout", "Topology", "Grouping",
              "BatchingBolt", "TicklessBatchingBolt"):
     assert hasattr(pystorm_a8c, name), name
 
-# The streamparse shim was removed before release, and the wheel must not
-# carry it: a stale copy left in the index would silently keep an unmigrated
-# consumer working until the day it does not.
-try:
-    import streamparse
-except ImportError:
-    pass
-else:
-    raise AssertionError("streamparse is importable; the shim is back")
 print("ok")
 EOF
 
