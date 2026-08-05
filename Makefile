@@ -1,5 +1,12 @@
 PYTHON_VERSIONS := 3.9 3.10 3.11 3.12 3.13 3.14
 
+# black's output depends on the interpreter it runs under -- it formats some
+# constructs differently on 3.9 than on 3.12+ -- so lint and fmt pin one, or
+# the tree is "correctly formatted" only for whichever Python you happen to
+# have. The newest supported version, so the formatting matches the newest
+# syntax the package may use.
+LINT_PYTHON := $(lastword $(PYTHON_VERSIONS))
+
 .PHONY: test test-all lint fmt dist publish clean
 
 test:
@@ -12,10 +19,10 @@ test-all:
 	done
 
 lint:
-	uv run --extra lint black --check pystorm_a8c test
+	uv run --python $(LINT_PYTHON) --extra lint black --check pystorm_a8c test
 
 fmt:
-	uv run --extra lint black pystorm_a8c test
+	uv run --python $(LINT_PYTHON) --extra lint black pystorm_a8c test
 
 dist: clean
 	uv build

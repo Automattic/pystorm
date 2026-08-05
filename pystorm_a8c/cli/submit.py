@@ -48,18 +48,19 @@ VIRTUALENV_BIN = f"{VIRTUALENV_ROOT}/{VIRTUALENV_NAME}/bin"
 #: interpreter and console scripts win over anything on the supervisor.
 WORKER_PATH = f"{VIRTUALENV_BIN}:/usr/local/bin:/usr/bin:/bin"
 
-#: Storm conf keys that ``--venv-blobstore-key`` derives. Passing any of them
+#: Storm conf keys that ``--venv-blobstore-key`` builds outright. Passing one
 #: by hand is refused rather than merged: two sources for one path is how the
 #: execution command and the blobstore localname drift apart.
 DERIVED_OPTIONS = {
-    "virtualenv_name": "set to {!r} by --venv-blobstore-key".format(VIRTUALENV_NAME),
-    "virtualenv_root": "set to {!r} by --venv-blobstore-key".format(VIRTUALENV_ROOT),
     "topology.blobstore.map": "built from --venv-blobstore-key",
-    "topology.environment": "built from --venv-blobstore-key",
 }
 
 #: Options this package used to act on and no longer does. Refused with the
 #: reason, rather than accepted and quietly ignored.
+_FIXED_VENV_PATH = (
+    f"the venv is always unpacked as {VIRTUALENV_BIN.rsplit('/', 1)[0]!r} and is "
+    f"not configurable; name the tarball with --venv-blobstore-key"
+)
 RETIRED_OPTIONS = {
     "install_virtualenv": (
         "nothing here builds a virtualenv any more -- the blobstore ships one"
@@ -69,6 +70,8 @@ RETIRED_OPTIONS = {
         "these were flags for the `virtualenv` command this package used to run "
         "over SSH"
     ),
+    "virtualenv_name": _FIXED_VENV_PATH,
+    "virtualenv_root": _FIXED_VENV_PATH,
     "use_ssh_for_nimbus": "Nimbus is always contacted directly",
 }
 # `serializer` is deliberately absent: it is still consumed, by
@@ -114,23 +117,53 @@ class _StoreDictAction(argparse.Action):
         setattr(namespace, self.dest, items)
 
 
-def blobstore_options(venv_blobstore_key):
+def blobstore_options(venv_blobstore_key, environment=None):
     """The Storm settings that put a virtualenv on every worker.
 
     ``bin/topo-submit`` used to spell these out as four ``-o`` flags whose
     values had to agree with each other -- the blobstore ``localname``, the
-    ``PATH``, and the two virtualenv keys all encode the same path. Deriving
+    ``PATH``, and two virtualenv keys that all encode the same path. Deriving
     them from the one key that actually varies removes the chance to get that
     agreement wrong.
+
+    ``virtualenv_name`` and ``virtualenv_root`` are deliberately *not* emitted.
+    They are constants now, and nothing -- here or in Storm -- reads them, so
+    sending them would just put two more dead keys in the topology conf.
+
+    :param environment: extra worker environment variables to carry alongside
+                        the derived ``PATH``. ``PATH`` itself is not accepted;
+                        see :func:`check_worker_environment`.
     """
     return {
-        "virtualenv_name": VIRTUALENV_NAME,
-        "virtualenv_root": VIRTUALENV_ROOT,
         "topology.blobstore.map": {
             venv_blobstore_key: {"localname": VIRTUALENV_NAME, "uncompress": True}
         },
-        "topology.environment": {"PATH": WORKER_PATH},
+        "topology.environment": {**(environment or {}), "PATH": WORKER_PATH},
     }
+
+
+def check_worker_environment(environment):
+    """``topology.environment`` may add variables, but not redefine ``PATH``.
+
+    Setting extra variables is ordinary -- ``TZ``, ``LD_LIBRARY_PATH``, an SDK
+    credential. ``PATH`` is not: it has to put the venv's ``bin`` first, or the
+    component runs under whatever interpreter the supervisor happens to have,
+    which is the failure the derived value exists to prevent.
+    """
+    if environment is None:
+        return
+    if not isinstance(environment, dict):
+        raise ValueError(
+            f"topology.environment must be a dict of environment variables, "
+            f"got {environment!r}"
+        )
+    if "PATH" in environment:
+        raise ValueError(
+            f"topology.environment must not set PATH: it is derived as "
+            f"{WORKER_PATH!r} so that the venv delivered by "
+            f"--venv-blobstore-key comes first. Set the other variables you "
+            f"need and leave PATH out."
+        )
 
 
 def check_options_are_consumed(options, source):
@@ -239,9 +272,12 @@ def resolve_options(
     storm_options.update(cli_options or {})
 
     # The venv wiring goes on last and is not overridable: every other source
-    # was just checked for these keys and refused.
+    # was just checked for these keys and refused. `topology.environment` is
+    # the exception -- extra variables are merged in, with PATH still ours.
     if venv_blobstore_key is not None:
-        storm_options.update(blobstore_options(venv_blobstore_key))
+        environment = storm_options.get("topology.environment")
+        check_worker_environment(environment)
+        storm_options.update(blobstore_options(venv_blobstore_key, environment))
 
     # Set log level to debug if topology.debug is set
     if storm_options.get("topology.debug", False):
@@ -415,6 +451,7 @@ def _submit_topology(
 
 
 def submit_topology(
+    *,
     venv_blobstore_key,
     name=None,
     env_name=None,
@@ -433,6 +470,14 @@ def submit_topology(
     :param venv_blobstore_key: blobstore key of the virtualenv tarball the
                                workers run out of. Required: there is no
                                worker layout without one.
+
+    .. note::
+       Every parameter is keyword-only, and deliberately so. This function used
+       to begin ``name=None``, so had ``venv_blobstore_key`` been added as a
+       leading positional, an existing ``submit_topology("raws")`` would have
+       kept working while silently meaning something else entirely -- a
+       blobstore key of "raws" and an auto-discovered topology. Keyword-only
+       turns that into a TypeError at the call site.
     """
     if not venv_blobstore_key:
         raise ValueError(
@@ -602,7 +647,7 @@ def subparser_hook(subparsers):
 def main(args):
     """Submit a Storm topology to Nimbus."""
     submit_topology(
-        args.venv_blobstore_key,
+        venv_blobstore_key=args.venv_blobstore_key,
         name=args.name,
         env_name=args.environment,
         options=args.options,

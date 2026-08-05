@@ -472,6 +472,19 @@ def test_log_stream_refuses_an_encoding_it_cannot_honor():
         stream.reconfigure(encoding="latin-1")
 
 
+@pytest.mark.parametrize("kwargs", [{"errors": "replace"}, {"newline": "\r\n"}])
+def test_log_stream_refuses_settings_it_cannot_apply(kwargs):
+    """Accepting these would be the accepted-but-ignored pattern again.
+
+    Text goes to a logger rather than through an encoder, so there is no
+    decode step to re-point and no line endings to translate.
+    """
+    stream = LogStream(_RecordingLogger())
+
+    with pytest.raises(ValueError, match="cannot honor"):
+        stream.reconfigure(**kwargs)
+
+
 def test_log_stream_withholds_buffer():
     """Byte writes through .buffer would bypass the logger entirely."""
     assert not hasattr(LogStream(_RecordingLogger()), "buffer")

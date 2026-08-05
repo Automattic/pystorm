@@ -139,14 +139,24 @@ setting that has to agree about the path:
 | `topology.blobstore.map` | `{"<KEY>": {"localname": "venv", "uncompress": true}}` |
 | `topology.environment` | `{"PATH": "../venv/bin:/usr/local/bin:/usr/bin:/bin"}` |
 | each component's `execution_command` | `../venv/bin/pystorm-a8c-run` |
-| `virtualenv_name`, `virtualenv_root` | `venv`, `..` |
+| `topology.python.path` | `../venv/bin/python` |
 
 `..` is the worker directory: Storm starts the multi-lang subprocess with its
 cwd already inside the unpacked `resources/`, which is where the blobstore
-extracts `localname` alongside. Passing any of those settings yourself is
+extracts `localname` alongside. Passing `topology.blobstore.map` yourself is
 refused — two sources for one path is how the execution command and the
 blobstore `localname` drift apart, and the symptom is a worker that never
 starts.
+
+`topology.environment` is the one you can extend. Extra variables are merged in
+and `PATH` stays derived:
+
+```bash
+-o 'topology.environment={"TZ":"UTC","LD_LIBRARY_PATH":"/opt/lib"}'
+```
+
+Setting `PATH` inside it is refused, because it has to put the venv's `bin`
+first or the component runs under whatever interpreter the supervisor has.
 
 ## config.json
 

@@ -182,8 +182,56 @@ def test_the_venv_wiring_is_added_from_the_blobstore_key():
     assert options["topology.environment"] == {
         "PATH": "../venv/bin:/usr/local/bin:/usr/bin:/bin"
     }
-    assert options["virtualenv_name"] == "venv"
-    assert options["virtualenv_root"] == ".."
+    # Not emitted: constants that nothing reads would just be dead conf keys.
+    assert "virtualenv_name" not in options
+    assert "virtualenv_root" not in options
+
+
+def test_extra_environment_variables_are_merged_with_the_derived_path():
+    """Adding TZ or LD_LIBRARY_PATH is ordinary; only PATH is reserved."""
+    from pystorm_a8c.cli.submit import resolve_options
+
+    options = resolve_options(
+        {"topology.environment": {"TZ": "UTC", "LD_LIBRARY_PATH": "/opt/lib"}},
+        {"workers": ["w1"]},
+        fake_topology(),
+        "raws",
+        venv_blobstore_key="k_tar_gz",
+    )
+
+    assert options["topology.environment"] == {
+        "TZ": "UTC",
+        "LD_LIBRARY_PATH": "/opt/lib",
+        "PATH": "../venv/bin:/usr/local/bin:/usr/bin:/bin",
+    }
+
+
+def test_a_hand_written_path_is_refused():
+    """PATH has to put the venv first, or the component runs under the
+    supervisor's interpreter."""
+    from pystorm_a8c.cli.submit import resolve_options
+
+    with pytest.raises(ValueError, match="must not set PATH"):
+        resolve_options(
+            {"topology.environment": {"PATH": "/usr/bin"}},
+            {"workers": ["w1"]},
+            fake_topology(),
+            "raws",
+            venv_blobstore_key="k_tar_gz",
+        )
+
+
+def test_a_non_dict_environment_is_refused():
+    from pystorm_a8c.cli.submit import resolve_options
+
+    with pytest.raises(ValueError, match="must be a dict"):
+        resolve_options(
+            {"topology.environment": "PATH=/usr/bin"},
+            {"workers": ["w1"]},
+            fake_topology(),
+            "raws",
+            venv_blobstore_key="k_tar_gz",
+        )
 
 
 def test_a_retired_key_in_the_env_block_is_refused():

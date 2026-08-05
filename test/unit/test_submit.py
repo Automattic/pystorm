@@ -196,7 +196,7 @@ def test_a_derived_option_cannot_be_set_by_hand():
     from pystorm_a8c.cli.submit import check_options_are_consumed
 
     with pytest.raises(ValueError) as exc:
-        check_options_are_consumed({"topology.environment": {}}, "-o options")
+        check_options_are_consumed({"topology.blobstore.map": {}}, "-o options")
 
     assert "--venv-blobstore-key" in str(exc.value)
 
@@ -371,7 +371,26 @@ def test_submit_topology_refuses_an_empty_key():
     from pystorm_a8c.cli.submit import submit_topology
 
     with pytest.raises(ValueError, match="venv_blobstore_key is required"):
-        submit_topology("")
+        submit_topology(venv_blobstore_key="")
+
+
+def test_submit_topology_takes_only_keyword_arguments():
+    """An outdated positional call must fail, not mean something else.
+
+    The signature used to begin `name=None`, so a leading positional
+    venv_blobstore_key would have made `submit_topology("raws")` keep working
+    while silently submitting an auto-discovered topology against a blobstore
+    key of "raws".
+    """
+    import inspect
+
+    from pystorm_a8c.cli.submit import submit_topology
+
+    kinds = {p.kind for p in inspect.signature(submit_topology).parameters.values()}
+    assert kinds == {inspect.Parameter.KEYWORD_ONLY}
+
+    with pytest.raises(TypeError):
+        submit_topology("raws")
 
 
 def test_the_removed_flags_are_really_removed():

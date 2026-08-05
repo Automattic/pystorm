@@ -129,13 +129,17 @@ class LogStream(io.TextIOBase):
         line_buffering=None,
         write_through=None,
     ):
-        """Accept the buffering knobs, refuse an encoding we cannot honor.
+        """Accept the buffering knobs, refuse anything this stream cannot do.
 
         ``sys.stdout.reconfigure(...)`` is a common idiom for forcing UTF-8 or
-        line buffering at startup. The buffering arguments are already true of
-        this stream, so accepting them is honest. Silently accepting a
-        different encoding would not be: text reaches the logger as `str` and
-        is encoded by the handler, so there is nothing here to re-encode.
+        line buffering at startup. ``line_buffering`` and ``write_through`` are
+        already true of this stream, so accepting them is honest.
+
+        The rest is refused rather than swallowed. Text reaches the logger as
+        `str` and is encoded by the handler, so there is no decode step here to
+        re-point and no line endings to translate -- accepting `encoding`,
+        `errors` or `newline` would be one more setting that looks applied and
+        is not.
         """
         if encoding is not None and encoding.lower().replace("_", "-") not in (
             "utf-8",
@@ -145,6 +149,13 @@ class LogStream(io.TextIOBase):
                 f"{type(self).__name__} is a logging sink and only speaks "
                 f"UTF-8; cannot reconfigure to {encoding!r}"
             )
+        for name, value in (("errors", errors), ("newline", newline)):
+            if value is not None:
+                raise ValueError(
+                    f"{type(self).__name__} cannot honor {name}={value!r}: it "
+                    f"hands text to a logger rather than encoding it, so there "
+                    f"is nothing for this setting to affect."
+                )
 
     def write(self, message):
         if message.strip() == "":
