@@ -353,12 +353,11 @@ def submit_topology(
     if local_jar_path:
         print(f"Using prebuilt JAR: {local_jar_path}")
     elif not remote_jar_path:
-        # Imported here rather than at module scope so that `submit` does not
-        # drag the JAR builder in when a prebuilt JAR was given (which is what
-        # the deploy script always does).
-        from pystorm_a8c.cli.jar import jar_for_deploy
+        # Imported here rather than at module scope because pystorm_a8c.cli
+        # imports both submit and jar; a top-level import would be a cycle.
+        from pystorm_a8c.cli.jar import build_jar
 
-        local_jar_path = jar_for_deploy()
+        local_jar_path = build_jar()
 
     if name != override_name:
         print(f'Deploying "{name}" topology with name "{override_name}"...')
