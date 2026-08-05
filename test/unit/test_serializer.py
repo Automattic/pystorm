@@ -94,3 +94,39 @@ def test_send_message_propagates_unexpected_errors():
 
     with pytest.raises(TypeError):
         s.send_message({"bad": Unserializable()})
+
+
+def test_blank_lines_are_skipped_and_counted():
+    """Storm emits stray blank lines; a pathological stream should be visible
+    without flooding the log."""
+    s = make_serializer(b"\n" * 3 + b'{"command": "next"}\nend\n')
+
+    assert s.read_message() == {"command": "next"}
+    assert s._blank_lines_read == 3
+
+
+def test_a_closed_pipe_becomes_storm_went_away():
+    """IOError on write means the parent Storm process is gone."""
+    s = make_serializer()
+
+    class ClosedPipe:
+        def flush(self):
+            raise IOError("broken pipe")
+
+        def write(self, _):
+            raise IOError("broken pipe")
+
+    s.output_stream = ClosedPipe()
+    with pytest.raises(StormWentAwayError):
+        s.send_message({"command": "sync"})
+
+
+def test_an_unwrappable_stream_is_refused():
+    """Returning it unwrapped would mis-encode every tuple on the wire."""
+    import threading
+
+    class NotAStream:
+        pass
+
+    with pytest.raises(TypeError, match="Cannot wrap"):
+        JSONSerializer(NotAStream(), NotAStream(), threading.RLock(), threading.RLock())

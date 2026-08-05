@@ -405,3 +405,124 @@ class ExecutionCommandTests(unittest.TestCase):
         self.assertEqual(cls_name, "WordSpout")
         self.assertNotIn(" ", mod_name)
         self.assertIs(getattr(importlib.import_module(mod_name), cls_name), WordSpout)
+
+
+# --------------------------------------------------------------------------
+# Ported from streamparse's test_dsl.py. The Java*Spec tests went with
+# JavaBolt/JavaSpout, but the argument conversion they exercised survives in
+# `Grouping.custom_object` -- a custom grouping is a Java class even when every
+# component is Python -- and `dsl/util.to_java_arg` had no coverage at all.
+
+
+class ShellComponentSpecValidationTests(unittest.TestCase):
+    """`ShellComponentSpec` validates command and script.
+
+    Reached through the Bolt/Spout subclasses on purpose: those are now bare
+    marker classes, so these also prove the validation still applies through
+    them.
+    """
+
+    def test_shell_bolt_no_command(self):
+        with self.assertRaises(ValueError):
+            ShellBoltSpec(WordCountBolt, command=None, script="count_words.pl")
+
+    def test_shell_bolt_no_script(self):
+        with self.assertRaises(TypeError):
+            ShellBoltSpec(WordCountBolt, command="perl", script=None)
+
+    def test_shell_spout_no_command(self):
+        with self.assertRaises(ValueError):
+            ShellSpoutSpec(WordSpout, command=None, script="words.pl")
+
+    def test_shell_spout_no_script(self):
+        with self.assertRaises(TypeError):
+            ShellSpoutSpec(WordSpout, command="perl", script=None)
+
+    def test_a_non_python_command_is_kept_verbatim(self):
+        """streamparse's perl_bolt case: the component need not be Python."""
+        spec = ShellBoltSpec(
+            WordCountBolt,
+            name="word_bolt",
+            command="perl",
+            script="count_words.pl",
+            inputs=[],
+            outputs=["word", "count"],
+        )
+        shell = spec.component_object.shell
+        self.assertEqual(shell.execution_command, "perl")
+        self.assertEqual(shell.script, "count_words.pl")
+
+
+class CustomGroupingTests(unittest.TestCase):
+    def test_custom_object_converts_every_basic_type(self):
+        from pystorm_a8c.storm import JavaObjectArg
+
+        grouping = Grouping.custom_object(
+            "com.bar.foo.counter.WordCountGrouping",
+            ["foo", 1, b"\x09\x10", True, 3.14159],
+        )
+
+        java_object = grouping.custom_object
+        self.assertEqual(
+            java_object.full_class_name, "com.bar.foo.counter.WordCountGrouping"
+        )
+        self.assertEqual(
+            java_object.args_list,
+            [
+                JavaObjectArg(string_arg="foo"),
+                JavaObjectArg(long_arg=1),
+                JavaObjectArg(binary_arg=b"\x09\x10"),
+                JavaObjectArg(bool_arg=True),
+                JavaObjectArg(double_arg=3.14159),
+            ],
+        )
+
+    def test_bool_is_converted_before_int(self):
+        """bool is a subclass of int, so the order of the checks is load-bearing."""
+        from pystorm_a8c.storm import JavaObjectArg
+
+        grouping = Grouping.custom_object("com.Foo", [True])
+        self.assertEqual(
+            grouping.custom_object.args_list, [JavaObjectArg(bool_arg=True)]
+        )
+
+    def test_custom_object_rejects_a_compound_argument(self):
+        with self.assertRaises(TypeError):
+            Grouping.custom_object("com.bar.foo.Grouping", [{"foo": "bar"}, 1])
+
+    def test_custom_serialized_takes_bytes(self):
+        grouping = Grouping.custom_serialized(b"\xde\xad\xbe\xef")
+        self.assertEqual(grouping.custom_serialized, b"\xde\xad\xbe\xef")
+
+    def test_custom_serialized_rejects_a_str(self):
+        """It used to *return* the TypeError instead of raising it."""
+        with self.assertRaises(TypeError):
+            Grouping.custom_serialized("deadbeef")
+
+    def test_fields_grouping_rejects_an_empty_list(self):
+        with self.assertRaises(ValueError):
+            Grouping.fields()
+
+    def test_fields_grouping_accepts_a_list_or_varargs(self):
+        self.assertEqual(Grouping.fields("a", "b"), Grouping.fields(["a", "b"]))
+
+
+class StreamValidationTests(unittest.TestCase):
+    def test_fields_must_be_strings(self):
+        with self.assertRaises(TypeError):
+            Stream(fields=["word", 3])
+
+    def test_fields_must_be_a_sequence(self):
+        with self.assertRaises(TypeError):
+            Stream(fields="word")
+
+    def test_name_must_be_a_string(self):
+        with self.assertRaises(TypeError):
+            Stream(fields=["word"], name=3)
+
+    def test_direct_must_be_a_bool(self):
+        with self.assertRaises(TypeError):
+            Stream(fields=["word"], direct="yes")
+
+    def test_fields_default_to_empty(self):
+        self.assertEqual(Stream().fields, [])

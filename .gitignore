@@ -15,6 +15,10 @@ dist/
 # pytest
 .pytest_cache/
 
+# `make coverage`
+.coverage
+htmlcov/
+
 # Topology JARs from `pystorm-a8c jar`, and from `submit` when it builds one.
 .artifacts/
 

@@ -17,7 +17,12 @@ dependencies = ["thriftpy2>=0.4.11"]
 [project.optional-dependencies]
 # tomli only for 3.9/3.10; tomllib is stdlib from 3.11. Test-only -- this does
 # not touch the one-runtime-dependency rule.
-test = ["pytest>=7", "pytest-timeout>=2", "tomli>=2; python_version < '3.11'"]
+test = [
+    "pytest>=7",
+    "pytest-cov>=4",
+    "pytest-timeout>=2",
+    "tomli>=2; python_version < '3.11'",
+]
 lint = ["black>=24"]
 
 [project.scripts]
@@ -30,4 +35,24 @@ module-name = ["pystorm_a8c"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
+# Coverage is not in addopts on purpose: `make test` runs six times in the
+# matrix and measuring on every one of them is wasted work. `make coverage`
+# turns it on.
 addopts = "-vv --timeout=30"
+
+[tool.coverage.run]
+source = ["pystorm_a8c"]
+branch = true
+# The Storm IDL is Apache's storm.thrift embedded as one string literal. It is
+# vendored, not written here, and "covered" would only mean the module was
+# imported.
+omit = ["pystorm_a8c/storm/thrift_idl_1x.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

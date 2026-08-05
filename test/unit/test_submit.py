@@ -3,6 +3,7 @@ Tests for the submit command.
 """
 
 import inspect
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -406,3 +407,131 @@ def test_the_removed_flags_are_really_removed():
     for flag in ("-r", "--overwrite_virtualenv", "--user", "--pool_size", "-u"):
         with pytest.raises(SystemExit):
             parser.parse_args(["submit", flag, "x"])
+
+
+# --------------------------------------------------------------------- flow
+
+
+def _fake_topology_class():
+    """A topology whose specs look like what the DSL produces."""
+    shell = ShellComponent(execution_command="pystorm-a8c-run", script="mypkg.mod.B")
+    bolt = SimpleNamespace(
+        bolt_object=SimpleNamespace(shell=shell),
+        common=SimpleNamespace(parallelism_hint=4),
+    )
+    return (
+        SimpleNamespace(
+            thrift_bolts={"b": bolt},
+            thrift_spouts={},
+            config={},
+            thrift_topology=object(),
+        ),
+        shell,
+    )
+
+
+def _patched_submit(monkeypatch, nimbus, **overrides):
+    """Stub out everything submit_topology reaches outside its own module."""
+    from pystorm_a8c.cli import submit as mod
+
+    topology_class, shell = _fake_topology_class()
+    monkeypatch.setattr(mod, "get_config", lambda **kw: {})
+    monkeypatch.setattr(
+        mod, "get_topology_definition", lambda n, **kw: ("raws", "t.py")
+    )
+    monkeypatch.setattr(
+        mod, "get_env_config", lambda e, **kw: ("storm4", {"workers": ["w1", "w2"]})
+    )
+    monkeypatch.setattr(mod, "get_topology_from_file", lambda f: topology_class)
+    monkeypatch.setattr(mod, "get_storm_workers", lambda env: ["w1", "w2"])
+    monkeypatch.setattr(mod, "get_nimbus_host_port", lambda env: ("nimbus-host", 6627))
+    monkeypatch.setattr(mod, "get_nimbus_client", lambda *a, **kw: nimbus)
+    monkeypatch.setattr(mod, "nimbus_storm_version", lambda c: (1, 2, 3))
+    monkeypatch.setattr(mod, "set_topology_serializer", lambda *a: None)
+    return topology_class, shell
+
+
+def _nimbus():
+    client = MagicMock()
+    client.getClusterInfo.return_value = SimpleNamespace(topologies=[])
+    client.isTopologyNameAllowed.return_value = True
+    client.beginFileUpload.return_value = "/upload/loc"
+    return client
+
+
+def test_submit_topology_uploads_and_submits(monkeypatch, tmp_path):
+    """The whole orchestration, with Nimbus mocked out."""
+    from pystorm_a8c.cli.submit import submit_topology
+
+    nimbus = _nimbus()
+    topology_class, shell = _patched_submit(monkeypatch, nimbus)
+    jar = tmp_path / "topology.jar"
+    jar.write_bytes(b"payload")
+
+    submit_topology(
+        venv_blobstore_key="myproject-venv-abc123_tar_gz",
+        local_jar_path=str(jar),
+    )
+
+    # The JAR was uploaded and the topology submitted under its own name.
+    nimbus.beginFileUpload.assert_called_once()
+    nimbus.finishFileUpload.assert_called_once_with("/upload/loc")
+    _, kwargs = nimbus.submitTopologyWithOpts.call_args
+    assert kwargs["name"] == "raws"
+    assert kwargs["uploadedJarLocation"] == "/upload/loc"
+
+    conf = json.loads(kwargs["jsonConf"])
+    assert conf["topology.original_name"] == "raws"
+    assert conf["topology.blobstore.map"] == {
+        "myproject-venv-abc123_tar_gz": {"localname": "venv", "uncompress": True}
+    }
+    # ...and the specs were pointed at the venv the blobstore will deliver.
+    assert shell.execution_command == "../venv/bin/pystorm-a8c-run"
+
+
+def test_submit_topology_honours_override_name(monkeypatch, tmp_path):
+    from pystorm_a8c.cli.submit import submit_topology
+
+    nimbus = _nimbus()
+    _patched_submit(monkeypatch, nimbus)
+    jar = tmp_path / "topology.jar"
+    jar.write_bytes(b"payload")
+
+    submit_topology(
+        venv_blobstore_key="k_tar_gz",
+        override_name="raws_prod",
+        local_jar_path=str(jar),
+    )
+
+    _, kwargs = nimbus.submitTopologyWithOpts.call_args
+    assert kwargs["name"] == "raws_prod"
+    # The original name still travels, so the deploy is traceable.
+    assert json.loads(kwargs["jsonConf"])["topology.original_name"] == "raws"
+
+
+def test_submit_topology_reuses_a_remote_jar(monkeypatch):
+    """-R skips the upload entirely."""
+    from pystorm_a8c.cli.submit import submit_topology
+
+    nimbus = _nimbus()
+    _patched_submit(monkeypatch, nimbus)
+
+    submit_topology(venv_blobstore_key="k_tar_gz", remote_jar_path="/srv/topology.jar")
+
+    nimbus.beginFileUpload.assert_not_called()
+    _, kwargs = nimbus.submitTopologyWithOpts.call_args
+    assert kwargs["uploadedJarLocation"] == "/srv/topology.jar"
+
+
+def test_submit_topology_refuses_a_par_dict_missing_this_env(monkeypatch):
+    """The guard runs before the JAR is uploaded, not after."""
+    from pystorm_a8c.cli.submit import submit_topology
+
+    nimbus = _nimbus()
+    topology_class, _ = _patched_submit(monkeypatch, nimbus)
+    topology_class.thrift_bolts["b"].common.parallelism_hint = {"storm3": 150}
+
+    with pytest.raises(ValueError, match="storm4"):
+        submit_topology(venv_blobstore_key="k_tar_gz", remote_jar_path="/srv/t.jar")
+
+    nimbus.submitTopologyWithOpts.assert_not_called()
