@@ -203,6 +203,20 @@ def test_get_config_accepts_an_open_file(tmp_path):
         assert list(get_config(config_file=fp)["envs"]) == ["a"]
 
 
+def test_an_open_file_can_be_read_more_than_once(tmp_path):
+    """`submit_topology` resolves the config three times from one argument.
+
+    Without the memo, a handle read once is exhausted; the second `json.load`
+    would raise on an empty string.
+    """
+    from pystorm_a8c.util import get_config, get_env_config
+
+    cfg = write_config(tmp_path, {"envs": {"a": {"nimbus": "h"}}})
+    with open(cfg) as fp:
+        assert list(get_config(config_file=fp)["envs"]) == ["a"]
+        assert get_env_config(None, config_file=fp)[0] == "a"
+
+
 def test_get_config_reads_the_working_directory_by_default(tmp_path, monkeypatch):
     from pystorm_a8c.util import get_config
 

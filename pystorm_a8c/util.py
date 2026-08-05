@@ -79,6 +79,12 @@ def get_config(config_file=None):
     if isinstance(config_file, (str, bytes, os.PathLike)):
         with open(config_file) as fp:
             return json.load(fp)
+    # A caller that hands us an open handle usually hands us the same one to
+    # several of the functions below; rewind so the second read is not empty.
+    try:
+        config_file.seek(0)
+    except (AttributeError, OSError):
+        pass
     return json.load(config_file)
 
 
