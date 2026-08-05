@@ -1,5 +1,6 @@
 """Base primititve classes for working with Storm."""
 
+import io
 import logging
 import os
 import sys
@@ -69,17 +70,42 @@ class StormHandler(logging.Handler):
             self.handleError(record)
 
 
-class LogStream:
+class LogStream(io.TextIOBase):
     """Object that implements enough of the Python stream API to be used as
     sys.stdout. Messages are written to the Python logger.
+
+    Subclasses ``io.TextIOBase`` rather than ``object`` because this really is
+    installed as ``sys.stdout`` for the life of the worker, and callers ask a
+    stream more than ``write``/``flush``. ``isatty()`` in particular is
+    consulted at import time by anything that colourizes or draws progress
+    bars, and a bare class answered that -- and ``encoding``, ``fileno()``,
+    ``writable()`` -- with AttributeError. The base class supplies the whole
+    surface; only the parts with a real answer here are overridden.
+
+    ``fileno()`` is deliberately left raising ``io.UnsupportedOperation``.
+    Handing back the true stdout descriptor would let a subprocess write
+    around us and straight into Storm's multi-lang pipe, which is the exact
+    corruption this redirect exists to prevent.
     """
 
     def __init__(self, logger):
+        super().__init__()
         self.logger = logger
+
+    def writable(self):
+        return True
+
+    def isatty(self):
+        return False
+
+    @property
+    def encoding(self):
+        # The serializer wraps the real stdout as UTF-8; report the same.
+        return "utf-8"
 
     def write(self, message):
         if message.strip() == "":
-            return  # skip blank lines
+            return len(message)  # skip blank lines
 
         try:
             self.logger.info(message)
@@ -89,6 +115,7 @@ class LogStream:
             # raise the exception which will cause Storm to choke
             sys.stdout = sys.__stdout__
             raise
+        return len(message)
 
     def flush(self):
         """No-op method to prevent crashes when someone does

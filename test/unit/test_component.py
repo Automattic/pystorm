@@ -2,6 +2,7 @@
 Tests for basic IPC stuff via Component class
 """
 
+import io
 import json
 import logging
 import os
@@ -11,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from pystorm_a8c.component import Component
+from pystorm_a8c.component import Component, LogStream
 from pystorm_a8c.exceptions import StormWentAwayError
 
 log = logging.getLogger(__name__)
@@ -426,6 +427,60 @@ def test_send_message_rejects_non_dict():
     c = Component(input_stream=BytesIO(), output_stream=BytesIO())
     with pytest.raises(TypeError):
         c.send_message(["not", "a", "dict"])
+
+
+class _RecordingLogger:
+    def __init__(self):
+        self.messages = []
+
+    def info(self, message):
+        self.messages.append(message)
+
+
+def test_log_stream_answers_the_questions_a_real_stdout_answers():
+    """It IS sys.stdout for the life of the worker, not a write/flush stub.
+
+    Libraries that colourize or draw progress bars ask isatty() and encoding
+    on import; a bare class answered both with AttributeError.
+    """
+    stream = LogStream(_RecordingLogger())
+
+    assert stream.isatty() is False
+    assert stream.encoding == "utf-8"
+    assert stream.writable() is True
+    assert stream.readable() is False
+
+
+def test_log_stream_refuses_to_hand_out_the_real_descriptor():
+    """fileno() would let a subprocess write straight into Storm's pipe."""
+    stream = LogStream(_RecordingLogger())
+
+    with pytest.raises(io.UnsupportedOperation):
+        stream.fileno()
+
+
+def test_log_stream_logs_writes_and_drops_blank_lines():
+    logger = _RecordingLogger()
+    stream = LogStream(logger)
+
+    assert stream.write("hello\n") == len("hello\n")
+    assert stream.write("   \n") == len("   \n")
+
+    assert logger.messages == ["hello\n"]
+
+
+def test_print_through_log_stream_reaches_the_logger():
+    """The whole point: print() must not reach the multi-lang pipe.
+
+    print() writes the text and the trailing newline as two calls, and the
+    newline-only one is dropped as a blank line -- so the logger sees one
+    record with no trailing newline, not two.
+    """
+    logger = _RecordingLogger()
+
+    print("via print", file=LogStream(logger))
+
+    assert logger.messages == ["via print"]
 
 
 if __name__ == "__main__":
