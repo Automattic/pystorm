@@ -451,6 +451,32 @@ def test_log_stream_answers_the_questions_a_real_stdout_answers():
     assert stream.readable() is False
 
 
+def test_log_stream_supplies_the_textiowrapper_only_attributes():
+    """io.TextIOBase does not define these; io.TextIOWrapper does.
+
+    Before the redirect went live, sys.stdout was the real stream and all of
+    them worked, so leaving them off is a regression rather than a gap.
+    """
+    stream = LogStream(_RecordingLogger())
+
+    assert stream.line_buffering is True
+    assert isinstance(stream.name, str)
+    stream.reconfigure(line_buffering=True, write_through=True)
+    stream.reconfigure(encoding="utf-8")
+
+
+def test_log_stream_refuses_an_encoding_it_cannot_honor():
+    stream = LogStream(_RecordingLogger())
+
+    with pytest.raises(ValueError, match="UTF-8"):
+        stream.reconfigure(encoding="latin-1")
+
+
+def test_log_stream_withholds_buffer():
+    """Byte writes through .buffer would bypass the logger entirely."""
+    assert not hasattr(LogStream(_RecordingLogger()), "buffer")
+
+
 def test_log_stream_refuses_to_hand_out_the_real_descriptor():
     """fileno() would let a subprocess write straight into Storm's pipe."""
     stream = LogStream(_RecordingLogger())

@@ -78,14 +78,21 @@ class LogStream(io.TextIOBase):
     installed as ``sys.stdout`` for the life of the worker, and callers ask a
     stream more than ``write``/``flush``. ``isatty()`` in particular is
     consulted at import time by anything that colourizes or draws progress
-    bars, and a bare class answered that -- and ``encoding``, ``fileno()``,
-    ``writable()`` -- with AttributeError. The base class supplies the whole
-    surface; only the parts with a real answer here are overridden.
+    bars, and a bare class answered that -- and ``encoding``, ``writable()``
+    -- with AttributeError.
 
-    ``fileno()`` is deliberately left raising ``io.UnsupportedOperation``.
-    Handing back the true stdout descriptor would let a subprocess write
-    around us and straight into Storm's multi-lang pipe, which is the exact
-    corruption this redirect exists to prevent.
+    ``io.TextIOBase`` covers most of the surface but not all of it:
+    ``line_buffering``, ``name`` and ``reconfigure`` belong to
+    ``io.TextIOWrapper``, so they are supplied here. Two things are withheld
+    on purpose:
+
+    ``buffer`` -- a caller that reached it would write bytes past the logger
+    and straight into Storm's multi-lang pipe.
+
+    ``fileno()`` -- inherited, so it raises ``io.UnsupportedOperation``.
+    Handing back the true stdout descriptor would let a subprocess corrupt
+    that same pipe. ``UnsupportedOperation`` is what callers already expect
+    from a non-file stream, so the ones that probe defensively still work.
     """
 
     def __init__(self, logger):
@@ -102,6 +109,42 @@ class LogStream(io.TextIOBase):
     def encoding(self):
         # The serializer wraps the real stdout as UTF-8; report the same.
         return "utf-8"
+
+    @property
+    def name(self):
+        return "<pystorm-a8c log stream>"
+
+    @property
+    def line_buffering(self):
+        # Every write is handed to the logger immediately, so from a caller's
+        # point of view this is at least as eager as line buffering.
+        return True
+
+    def reconfigure(
+        self,
+        *,
+        encoding=None,
+        errors=None,
+        newline=None,
+        line_buffering=None,
+        write_through=None,
+    ):
+        """Accept the buffering knobs, refuse an encoding we cannot honor.
+
+        ``sys.stdout.reconfigure(...)`` is a common idiom for forcing UTF-8 or
+        line buffering at startup. The buffering arguments are already true of
+        this stream, so accepting them is honest. Silently accepting a
+        different encoding would not be: text reaches the logger as `str` and
+        is encoded by the handler, so there is nothing here to re-encode.
+        """
+        if encoding is not None and encoding.lower().replace("_", "-") not in (
+            "utf-8",
+            "utf8",
+        ):
+            raise ValueError(
+                f"{type(self).__name__} is a logging sink and only speaks "
+                f"UTF-8; cannot reconfigure to {encoding!r}"
+            )
 
     def write(self, message):
         if message.strip() == "":

@@ -23,6 +23,15 @@ Bump `version` in `pyproject.toml`. Grep for the old version and update anything
 that pins it — the README's install line pins an exact version on purpose, so it
 will not update itself.
 
+> **Cutting the first release.** While this work is in review, `pyproject.toml`
+> carries a pre-release version (`1.0.0b1`) but the documentation already
+> describes the package as `1.0.0`. That divergence is deliberate: the docs are
+> written for what ships. Releasing means **dropping the `b1`** so
+> `pyproject.toml` reads `1.0.0`, at which point the docs need no edit. Write
+> pre-releases in PEP 440 canonical form (`1.0.0b1`, not `1.0.0-beta1`) — the
+> raw string in `pyproject.toml` is compared against the normalized value in
+> installed metadata, and a test enforces it.
+
 ```bash
 grep -rn "<old-version>" README.md doc/ pyproject.toml
 ```
@@ -58,9 +67,9 @@ for name in ("Bolt", "Spout", "Topology", "Grouping",
              "BatchingBolt", "TicklessBatchingBolt"):
     assert hasattr(pystorm_a8c, name), name
 
-# The streamparse shim was deleted in 1.2.0, and the wheel must not carry it:
-# a stale copy left in the index would silently keep an unmigrated consumer
-# working until the day it does not.
+# The streamparse shim was removed before release, and the wheel must not
+# carry it: a stale copy left in the index would silently keep an unmigrated
+# consumer working until the day it does not.
 try:
     import streamparse
 except ImportError:

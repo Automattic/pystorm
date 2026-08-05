@@ -142,7 +142,7 @@ Only these keys are read. Anything else is ignored.
       "nimbus": "storm-ha.example.com:6627",
       "virtualenv_root": "..",
       "workers": ["supervisor01", "supervisor02"],
-      "log": { "level": "info", "path": "/var/log/storm" },
+      "log": { "level": "info" },
       "options": {
         "topology.message.timeout.secs": 60,
         "topology.max.spout.pending": 500
@@ -158,7 +158,7 @@ Only these keys are read. Anything else is ignored.
 | `envs.<name>.nimbus` | `host` or `host:port` (port defaults to 6627) |
 | `envs.<name>.virtualenv_root` | Prefix for the worker venv path (default `..`) |
 | `envs.<name>.workers` | Supervisor hosts. If absent, Nimbus is asked |
-| `envs.<name>.log` | `level`, `path`, `file`, `max_bytes`, `backup_count` |
+| `envs.<name>.log` | `level` only. See below |
 | `envs.<name>.options` | Storm conf defaults, overridden by `-o` |
 | `serializer` | Accepted only as `"json"` — see below |
 
@@ -167,6 +167,12 @@ Option precedence, lowest to highest:
 
 `use_ssh_for_nimbus` is accepted and **ignored**, with a warning. Nimbus is
 always contacted directly.
+
+`log.path`, `log.file`, `log.max_bytes` and `log.backup_count` are likewise
+accepted and **ignored**, with a warning. They configured a rotating file
+handler on the worker; components now log through `StormHandler` into Storm's
+own logs, so there is no file for those settings to name. Only `log.level`
+still does anything.
 
 `serializer` is accepted only when set to `"json"`. Any other value is a hard
 error rather than a silent downgrade — JSON is the only wire protocol.
@@ -221,10 +227,10 @@ was deleted rather than moved:
 - `streamparse.util.prepare_topology` — copied `src/` into `_resources/` for
   the `lein` build. Gone; `pystorm-a8c jar` zips `src/` directly.
 
-> **History:** `1.1.x` shipped a deprecated `streamparse` forwarding module so
-> that a consumer could migrate its imports gradually. `1.2.0` deletes it. If
-> you are moving off `1.1.x` and were still relying on the shim, do the import
-> rewrite first, then upgrade.
+> **Note:** an earlier draft of this package carried a deprecated `streamparse`
+> forwarding module, so that a consumer could migrate its imports gradually. It
+> was removed before the first release. No published version of `pystorm-a8c`
+> provides those import paths.
 
 ## What was removed and why
 
@@ -261,6 +267,11 @@ package's own API ship in the minor position.** Read the changelog before a
 minor bump, not just before a major one. This is the one thing about our
 versioning that will surprise you.
 
+Pre-release builds carry a PEP 440 suffix — `1.0.0b1` is `1.0.0` under review.
+This documentation describes the release, so an unreleased branch's
+`pyproject.toml` will read one version lower than the docs until the suffix is
+dropped.
+
 Cutting a release is written up in [doc/RELEASING.md](doc/RELEASING.md).
 
 There is no epoch and no local version label. The distribution name
@@ -273,12 +284,12 @@ names and needed the marker.
 ### Pinning
 
 ```
-pystorm-a8c==1.2.0
+pystorm-a8c==1.0.0
 ```
 
 ### Git tags
 
-Releases are tagged `pystorm-a8c-v1.2.0`, not `v1.2.0`. This branch lives in
+Releases are tagged `pystorm-a8c-v1.0.0`, not `v1.0.0`. This branch lives in
 the `Automattic/pystorm` fork and inherits upstream pystorm's tag history,
 which already includes `v1.0.0` through `v3.1.4` — the bare names collide.
 
