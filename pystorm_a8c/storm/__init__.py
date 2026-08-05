@@ -19,6 +19,11 @@ GlobalStreamId = storm_thrift.GlobalStreamId
 ThriftGrouping = storm_thrift.Grouping
 StreamInfo = storm_thrift.StreamInfo
 NullStruct = storm_thrift.NullStruct
+# JavaBolt/JavaSpout are dropped, but Grouping.custom_object still builds a
+# JavaObject -- a custom grouping is a Java class even when the components are
+# Python. to_java_arg needs JavaObjectArg for the same reason.
+JavaObject = storm_thrift.JavaObject
+JavaObjectArg = storm_thrift.JavaObjectArg
 SubmitOptions = storm_thrift.SubmitOptions
 TopologyInitialStatus = storm_thrift.TopologyInitialStatus
 KillOptions = storm_thrift.KillOptions
@@ -46,6 +51,8 @@ __all__ = [
     "ThriftGrouping",
     "StreamInfo",
     "NullStruct",
+    "JavaObject",
+    "JavaObjectArg",
     "SubmitOptions",
     "TopologyInitialStatus",
     "KillOptions",

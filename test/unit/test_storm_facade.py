@@ -34,6 +34,8 @@ def test_facade_exports_every_name_the_package_uses():
         "ThriftGrouping",
         "StreamInfo",
         "NullStruct",
+        "JavaObject",
+        "JavaObjectArg",
         "SubmitOptions",
         "TopologyInitialStatus",
         "KillOptions",

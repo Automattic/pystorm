@@ -160,6 +160,28 @@ class Component:
 
     exit_on_exception = True
 
+    # Topology-DSL attributes. These lived on streamparse's Component subclass,
+    # which no longer exists now that the two-level hierarchy is collapsed into
+    # one. ComponentSpec reads all three whenever spec() is called without an
+    # explicit override, so they have to be defined here or every spec() call
+    # dies with AttributeError.
+    outputs = None
+    par = 1
+    config = None
+
+    @classmethod
+    def spec(cls, *args, **kwargs):
+        """Only here to produce a useful error message.
+
+        Bolt and Spout each override this. Reaching the base implementation
+        means someone put a bare Component subclass in a Topology, and the
+        topology metaclass' "bolts or spouts" check would otherwise fire much
+        later with a far less obvious message.
+        """
+        raise TypeError(
+            f"Specifications should either be bolts or spouts. Given: {cls!r}"
+        )
+
     def __init__(
         self,
         input_stream=sys.stdin,
