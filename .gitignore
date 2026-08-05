@@ -1,20 +1,23 @@
-build/
-/build.sh
-.cache
-.coverage
-dist/
-doc/_build/
-.DS_Store
-*.egg*
-.env
-*.py[co]
-_release/
-_resources/
-*.sw*
-.tox/
-.python-version
-.venv/
-uv.lock
-.pystorm/
-.pytest_cache/
+# Python bytecode. Python 3 always writes it under __pycache__/.
 __pycache__/
+
+# uv-managed environment and lockfile.
+# .python-version is ignored deliberately: this package is tested across the
+# 3.9-3.14 matrix, so a committed `uv python pin` would contradict CI.
+.venv/
+.python-version
+uv.lock
+
+# `uv build` / `make dist`. The uv_build backend writes only here -- no
+# build/ tree and no *.egg-info.
+dist/
+
+# pytest
+.pytest_cache/
+
+# Topology JARs from `pystorm-a8c jar`, and from `submit` when it builds one.
+.artifacts/
+
+# macOS Finder metadata. Turns up inside source trees, which is also why
+# pystorm_a8c/cli/jar.py excludes it from the JAR.
+.DS_Store
