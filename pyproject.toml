@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "pystorm-a8c"
-version = "1.0.0"
+version = "1.1.0"
 description = "Slim Apache Storm multi-lang runtime, topology DSL, and Nimbus submit client for Parse.ly"
 readme = "README.md"
 requires-python = ">=3.9"

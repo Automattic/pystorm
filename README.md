@@ -67,6 +67,12 @@ class WordCount(Topology):
 `par` accepts an int or a dict keyed by environment name; the dict is resolved
 to this environment's value at submit time.
 
+If a `par` dict has no key for the environment you are submitting to, the
+submit **fails** and names every component that is missing one. `streamparse`
+passed `None` through to Nimbus here, which Nimbus reads as "field absent" and
+runs the component at parallelism 1 — a topology sized for hundreds of
+executors would come up crippled with nothing in the log to say so.
+
 ## The CLI
 
 There are exactly two subcommands.
@@ -265,12 +271,12 @@ names and needed the marker.
 ### Pinning
 
 ```
-pystorm-a8c==1.0.0
+pystorm-a8c==1.1.0
 ```
 
 ### Git tags
 
-Releases are tagged `pystorm-a8c-v1.0.0`, not `v1.0.0`. This branch lives in
+Releases are tagged `pystorm-a8c-v1.1.0`, not `v1.1.0`. This branch lives in
 the `Automattic/pystorm` fork and inherits upstream pystorm's tag history,
 which already includes `v1.0.0` through `v3.1.4` — the bare names collide.
 

@@ -204,13 +204,33 @@ def resolve_parallelism(topology_class, env_name):
     A spec may set ``par={"storm4": 8, "local": 1}`` so one topology file can
     serve several clusters. Thrift only accepts an int, so the dict has to be
     resolved before submission.
+
+    A dict that has no entry for ``env_name`` is an error. Upstream used
+    ``.get()`` here, which sent ``None`` to Nimbus; Nimbus reads that as "field
+    absent" and silently runs the component at parallelism 1. On a topology
+    sized for hundreds of executors that is an outage that submits cleanly, so
+    refuse it instead and name what is missing.
     """
-    for thrift_component in chain(
-        topology_class.thrift_bolts.values(), topology_class.thrift_spouts.values()
+    missing = []
+    for name, thrift_component in chain(
+        topology_class.thrift_bolts.items(), topology_class.thrift_spouts.items()
     ):
         par_hint = thrift_component.common.parallelism_hint
         if isinstance(par_hint, dict):
-            thrift_component.common.parallelism_hint = par_hint.get(env_name)
+            if env_name not in par_hint:
+                missing.append((name, sorted(par_hint)))
+                continue
+            thrift_component.common.parallelism_hint = par_hint[env_name]
+
+    if missing:
+        detail = "; ".join(
+            f"{name} (defines: {', '.join(envs)})" for name, envs in sorted(missing)
+        )
+        raise ValueError(
+            f"No parallelism defined for env {env_name!r} on: {detail}. Add a "
+            f"{env_name!r} key to each par dict -- submitting without one would "
+            f"silently run these components at parallelism 1."
+        )
 
 
 # --------------------------------------------------------------- Nimbus

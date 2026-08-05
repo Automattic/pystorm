@@ -101,6 +101,55 @@ def test_a_plain_parallelism_hint_is_left_alone():
     assert comp.common.parallelism_hint == 4
 
 
+def test_a_par_dict_missing_this_env_is_refused():
+    """Upstream sent None, which Nimbus silently reads as parallelism 1."""
+    from pystorm_a8c.cli.submit import resolve_parallelism
+
+    comp = MagicMock()
+    comp.common.parallelism_hint = {"storm3": 150, "local": 1}
+    topology_class = MagicMock()
+    topology_class.thrift_bolts = {"views_reader": comp}
+    topology_class.thrift_spouts = {}
+
+    with pytest.raises(ValueError) as exc:
+        resolve_parallelism(topology_class, "storm4")
+    assert "views_reader" in str(exc.value)
+    assert "storm4" in str(exc.value)
+
+
+def test_the_error_names_every_offending_component_at_once():
+    """One submit should not have to be re-run once per missing key."""
+    from pystorm_a8c.cli.submit import resolve_parallelism
+
+    bolt, spout = MagicMock(), MagicMock()
+    bolt.common.parallelism_hint = {"storm3": 4}
+    spout.common.parallelism_hint = {"storm3": 8}
+    topology_class = MagicMock()
+    topology_class.thrift_bolts = {"counter": bolt}
+    topology_class.thrift_spouts = {"reader": spout}
+
+    with pytest.raises(ValueError) as exc:
+        resolve_parallelism(topology_class, "storm4")
+    message = str(exc.value)
+    assert "counter" in message and "reader" in message
+
+
+def test_a_par_dict_is_not_mutated_when_the_submit_is_refused():
+    """A failed resolve must leave the topology re-submittable as-is."""
+    from pystorm_a8c.cli.submit import resolve_parallelism
+
+    good, bad = MagicMock(), MagicMock()
+    good.common.parallelism_hint = {"storm4": 8}
+    bad.common.parallelism_hint = {"storm3": 4}
+    topology_class = MagicMock()
+    topology_class.thrift_bolts = {"good": good, "bad": bad}
+    topology_class.thrift_spouts = {}
+
+    with pytest.raises(ValueError):
+        resolve_parallelism(topology_class, "storm4")
+    assert bad.common.parallelism_hint == {"storm3": 4}
+
+
 def test_submit_does_not_open_an_ssh_tunnel():
     from pystorm_a8c.cli import submit
 
