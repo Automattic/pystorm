@@ -16,7 +16,7 @@ Apache Storm major line, so a breaking Python-API change is a **minor** bump.
 
 ```bash
 make lint          # black --check across pystorm_a8c, test
-make test          # full suite
+make test-all      # full suite on every supported Python, not just the default
 ```
 
 Bump `version` in `pyproject.toml`. Grep for the old version and update anything

@@ -5,7 +5,6 @@ Tests for the pystorm_a8c_run worker entry point.
 import os
 import subprocess
 import sys
-import textwrap
 
 import pytest
 
@@ -13,16 +12,24 @@ from pystorm_a8c import run
 
 # Writes a sentinel next to the CWD so the test can prove `run()` was reached
 # through the real import path, not just that the module was importable.
-TARGET_SRC = textwrap.dedent('''
-    """Stand-in for a component module shipped inside a topology JAR."""
-
-    import pathlib
-
-
-    class RunTarget:
-        def run(self):
-            pathlib.Path("ran.txt").write_text("ok")
-    ''')
+#
+# Built from a list rather than a dedented triple-quoted literal: black
+# reformats `textwrap.dedent('''...''')` differently depending on the
+# interpreter it runs under, so that spelling made `make lint` pass on 3.9 and
+# fail on 3.12+, or the reverse, with nothing in the repo having changed.
+TARGET_SRC = "\n".join(
+    [
+        '"""Stand-in for a component module shipped inside a topology JAR."""',
+        "",
+        "import pathlib",
+        "",
+        "",
+        "class RunTarget:",
+        "    def run(self):",
+        '        pathlib.Path("ran.txt").write_text("ok")',
+        "",
+    ]
+)
 
 
 @pytest.fixture

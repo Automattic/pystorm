@@ -1,9 +1,13 @@
 name: test
-on: [push, pull_request]
+# push only. Adding pull_request would run every branch twice, since a PR from
+# this repo already gets a push event for the same commit.
+on: push
 
 jobs:
   test:
-    runs-on: ubuntu-slim
+    # ubuntu-latest, not ubuntu-slim: the slim runner is the bare ubuntu:24.04
+    # image and has no make, which the steps below rely on.
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -11,12 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv run --python ${{ matrix.python-version }} --extra test pytest -q
+      # Pin the interpreter the way a developer would, then run the same target
+      # they run. uv reads .python-version, so `make test` needs no
+      # matrix-aware flag and CI cannot drift from the local command.
+      - run: echo "${{ matrix.python-version }}" > .python-version
+      - run: make test
 
   lint:
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      # Keep this list in sync with the `lint` target in the Makefile.
-      - run: uv run --extra lint black --check pystorm_a8c test
+      - run: make lint
