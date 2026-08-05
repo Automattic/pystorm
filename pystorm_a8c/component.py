@@ -1,21 +1,15 @@
 """Base primititve classes for working with Storm."""
-from __future__ import absolute_import, print_function, unicode_literals
 
 import logging
 import os
-import signal
 import sys
 import threading
 from collections import deque, namedtuple
-from logging.handlers import RotatingFileHandler
 from os.path import join
 from traceback import format_exc
 
-from six import string_types
-
-from .exceptions import StormWentAwayError
-from .serializers.msgpack_serializer import MsgpackSerializer
-from .serializers.json_serializer import JSONSerializer
+from pystorm_a8c.exceptions import StormWentAwayError
+from pystorm_a8c.serializer import JSONSerializer
 
 # Support for Storm Log levels as per STORM-414
 _STORM_LOG_TRACE = 0
@@ -41,26 +35,8 @@ _PYTHON_LOG_LEVELS = {
     "debug": logging.DEBUG,
     "trace": logging.DEBUG,
 }
-_SERIALIZERS = {"json": JSONSerializer, "msgpack": MsgpackSerializer}
-
 
 log = logging.getLogger(__name__)
-
-
-def remote_pdb_handler(signum, frame):
-    """ Handler to drop us into a remote debugger upon receiving SIGUSR1 """
-    try:
-        from remote_pdb import RemotePdb
-
-        rdb = RemotePdb(host="127.0.0.1", port=0)
-        rdb.set_trace(frame=frame)
-    except ImportError:
-        log.warning(
-            "remote_pdb unavailable.  Please install remote_pdb to "
-            "allow remote debugging."
-        )
-    # Restore signal handler for later
-    signal.signal(signum, remote_pdb_handler)
 
 
 class StormHandler(logging.Handler):
@@ -72,7 +48,7 @@ class StormHandler(logging.Handler):
         :param serializer: The serializer of the component this handler is being
                            used for.
         """
-        super(StormHandler, self).__init__()
+        super().__init__()
         self.serializer = serializer
 
     def emit(self, record):
@@ -93,7 +69,7 @@ class StormHandler(logging.Handler):
             self.handleError(record)
 
 
-class LogStream(object):
+class LogStream:
     """Object that implements enough of the Python stream API to be used as
     sys.stdout. Messages are written to the Python logger.
     """
@@ -107,7 +83,7 @@ class LogStream(object):
 
         try:
             self.logger.info(message)
-        except:
+        except Exception:
             # There's been an issue somewhere in the logging sub-system
             # so we'll put stderr and stdout back to their originals and
             # raise the exception which will cause Storm to choke
@@ -137,7 +113,7 @@ Tuple = namedtuple("Tuple", "id component stream task values")
 """
 
 
-class Component(object):
+class Component:
     """Base class for spouts and bolts which contains class methods for
     logging messages back to the Storm worker process.
 
@@ -188,9 +164,13 @@ class Component(object):
         self,
         input_stream=sys.stdin,
         output_stream=sys.stdout,
-        rdb_signal="SIGUSR1",
-        serializer="json",
+        exit_on_exception=None,
     ):
+        # `exit_on_exception` defaults to None rather than True so that the
+        # class attribute above stays authoritative for subclasses that set it
+        # (TicklessBatchingBolt subclasses do). Passing it explicitly overrides.
+        if exit_on_exception is not None:
+            self.exit_on_exception = exit_on_exception
         # Ensure we don't fall back on the platform-dependent encoding and
         # always use UTF-8
         self.topology_name = None
@@ -207,20 +187,9 @@ class Component(object):
         self._pending_task_ids = deque()
         self._reader_lock = threading.RLock()
         self._writer_lock = threading.RLock()
-        if serializer in _SERIALIZERS:
-            self.serializer = _SERIALIZERS[serializer](
-                input_stream, output_stream, self._reader_lock, self._writer_lock
-            )
-        else:
-            raise ValueError("Unknown serializer: {0}", serializer)
-
-        # Only default to SIGUSR1 on systems that have it
-        if isinstance(rdb_signal, string_types) and hasattr(signal, rdb_signal):
-            rdb_signal = getattr(signal, rdb_signal)
-
-        # Setup remote pdb handler if asked to
-        if rdb_signal is not None:
-            signal.signal(rdb_signal, remote_pdb_handler)
+        self.serializer = JSONSerializer(
+            input_stream, output_stream, self._reader_lock, self._writer_lock
+        )
 
     @staticmethod
     def is_heartbeat(tup):
@@ -233,56 +202,27 @@ class Component(object):
         """
         self.topology_name = storm_conf.get("topology.name", "")
         self.task_id = context.get("taskid", "")
-        self.component_name = context.get("componentid")
-        # If using Storm before 0.10.0 componentid is not available
-        if self.component_name is None:
-            self.component_name = context.get("task->component", {}).get(
-                str(self.task_id), ""
-            )
+        # Storm >= 0.10.0 always sends componentid; the task->component
+        # fallback for older Storm is dropped.
+        self.component_name = context["componentid"]
         self.debug = storm_conf.get("topology.debug", False)
         self.storm_conf = storm_conf
         self.context = context
 
-        # Set up logging
+        # Set up logging. `pystorm.log.path` is never set in any config we
+        # ship, so file logging is gone -- the handler is always StormHandler.
         self.logger = logging.getLogger(".".join((__name__, self.component_name)))
-        log_path = self.storm_conf.get("pystorm.log.path")
-        log_file_name = self.storm_conf.get(
-            "pystorm.log.file",
-            "pystorm_{topology_name}" "_{component_name}" "_{task_id}" "_{pid}.log",
-        )
         root_log = logging.getLogger()
         log_level = self.storm_conf.get("pystorm.log.level", "info")
-        if log_path:
-            max_bytes = self.storm_conf.get("pystorm.log.max_bytes", 1000000)  # 1 MB
-            backup_count = self.storm_conf.get("pystorm.log.backup_count", 10)
-            log_file = join(
-                log_path,
-                (
-                    log_file_name.format(
-                        topology_name=self.topology_name,
-                        component_name=self.component_name,
-                        task_id=self.task_id,
-                        pid=self.pid,
-                    )
-                ),
-            )
-            handler = RotatingFileHandler(
-                log_file, maxBytes=max_bytes, backupCount=backup_count
-            )
-            log_format = self.storm_conf.get(
-                "pystorm.log.format",
-                "%(asctime)s - %(name)s - " "%(levelname)s - %(message)s",
-            )
-        else:
-            self.log(
-                "pystorm StormHandler logging enabled, so all messages at "
-                'levels greater than "pystorm.log.level" ({}) will be sent'
-                " to Storm.".format(log_level)
-            )
-            handler = StormHandler(self.serializer)
-            log_format = self.storm_conf.get(
-                "pystorm.log.format", "%(asctime)s - %(name)s - " "%(message)s"
-            )
+        self.log(
+            "pystorm StormHandler logging enabled, so all messages at "
+            'levels greater than "pystorm.log.level" ({}) will be sent'
+            " to Storm.".format(log_level)
+        )
+        handler = StormHandler(self.serializer)
+        log_format = self.storm_conf.get(
+            "pystorm.log.format", "%(asctime)s - %(name)s - " "%(message)s"
+        )
         formatter = logging.Formatter(log_format)
         log_level = _PYTHON_LOG_LEVELS.get(log_level, logging.INFO)
         if self.debug:
@@ -337,14 +277,13 @@ class Component(object):
     def send_message(self, message):
         """Send a message to Storm via stdout."""
         if not isinstance(message, dict):
-            logger = self.logger if self.logger else log
-            logger.error(
-                "%s.%d attempted to send a non dict message to Storm: " "%r",
-                self.component_name,
-                self.pid,
-                message,
+            # Silently dropping a malformed message is how protocol desyncs
+            # become invisible. Fail where the mistake was made.
+            raise TypeError(
+                "{}.{} attempted to send a non-dict message to Storm: {!r}".format(
+                    self.component_name, self.pid, message
+                )
             )
-            return
         self.serializer.send_message(message)
 
     def raise_exception(self, exception, tup=None):
@@ -365,21 +304,6 @@ class Component(object):
         )
         self.send_message({"command": "error", "msg": str(message)})
         self.send_message({"command": "sync"})  # sync up right away
-
-    def report_metric(self, name, value):
-        """Report a custom metric back to Storm.
-
-        :param name:  Name of the metric.  This can be anything.
-        :param value: Value of the metric.  This is usually a number.
-
-        Only supported in Storm 0.9.3+.
-
-        .. note::
-            In order for this to work, the metric must be registered on the
-            Storm side.  See example code
-            `here <https://github.com/dashengju/storm/blob/573c42a64885dac9a6a0d4c69a754500b607a8f1/storm-core/src/jvm/backtype/storm/testing/PythonShellMetricsBolt.java#L22-L23>`__.
-        """
-        self.send_message({"command": "metrics", "name": name, "params": value})
 
     def log(self, message, level=None):
         """Log a message to Storm optionally providing a logging level.

@@ -2,22 +2,17 @@
 Tests for basic IPC stuff via Component class
 """
 
-from __future__ import absolute_import, print_function, unicode_literals
-
+import json
 import logging
 import os
 import unittest
 from io import BytesIO
+from unittest.mock import patch
 
-import simplejson as json
+import pytest
 
-try:
-    from unittest.mock import patch
-except ImportError:
-    from mock import patch
-
-from pystorm import Component
-from pystorm.exceptions import StormWentAwayError
+from pystorm_a8c.component import Component
+from pystorm_a8c.exceptions import StormWentAwayError
 
 
 log = logging.getLogger(__name__)
@@ -259,8 +254,10 @@ class ComponentTests(unittest.TestCase):
                 component.serializer.output_stream.buffer.getvalue(),
             )
 
-        # Check that we properly skip over invalid input
-        self.assertIsNone(component.send_message(["foo", "bar"]))
+        # A non-dict message is now a hard error. Silently dropping it is how
+        # protocol desyncs become invisible.
+        with self.assertRaises(TypeError):
+            component.send_message(["foo", "bar"])
 
     def test_send_message_unicode(self):
         component = Component(input_stream=BytesIO(), output_stream=BytesIO())
@@ -287,8 +284,10 @@ class ComponentTests(unittest.TestCase):
                 component.serializer.output_stream.buffer.getvalue(),
             )
 
-        # Check that we properly skip over invalid input
-        self.assertIsNone(component.send_message(["foo", "bar"]))
+        # A non-dict message is now a hard error. Silently dropping it is how
+        # protocol desyncs become invisible.
+        with self.assertRaises(TypeError):
+            component.send_message(["foo", "bar"])
 
     @patch.object(Component, "send_message", autospec=True)
     def test_log(self, send_message_mock):
@@ -339,7 +338,7 @@ class ComponentTests(unittest.TestCase):
         assert raises_fixture.exception.code == 2
 
     @patch.object(Component, "_handle_run_exception", autospec=True)
-    @patch("pystorm.component.log", autospec=True)
+    @patch("pystorm_a8c.component.log", autospec=True)
     def test_nested_exception(self, log_mock, _handle_run_exception_mock):
         # Make sure self._handle_run_exception raises an exception
         def raiser(self):  # lambdas can't raise
@@ -360,7 +359,7 @@ class ComponentTests(unittest.TestCase):
         assert raises_fixture.exception.code == 1
 
     @patch.object(Component, "_handle_run_exception", autospec=True)
-    @patch("pystorm.component.log", autospec=True)
+    @patch("pystorm_a8c.component.log", autospec=True)
     def test_nested_went_away_exception(self, log_mock, _handle_run_exception_mock):
         # Make sure self._handle_run_exception raises an exception
         def raiser(*args):  # lambdas can't raise
@@ -380,6 +379,54 @@ class ComponentTests(unittest.TestCase):
         assert log_mock.error.call_count == 1
         assert log_mock.info.call_count == 1
         assert raises_fixture.exception.code == 2
+
+
+def test_serializer_kwarg_is_gone():
+    # Only JSON is supported; the pluggable-serializer knob is removed.
+    import inspect
+
+    from pystorm_a8c.component import Component
+
+    assert "serializer" not in inspect.signature(Component.__init__).parameters
+
+
+def test_no_sigusr1_handler_registered_by_component():
+    # remote_pdb support is removed; TicklessBatchingBolt owns SIGUSR1.
+    import signal
+
+    from pystorm_a8c.component import Component
+
+    before = signal.getsignal(signal.SIGUSR1)
+    Component(input_stream=BytesIO(), output_stream=BytesIO())
+    assert signal.getsignal(signal.SIGUSR1) is before
+
+
+def test_report_metric_is_gone():
+    from pystorm_a8c.component import Component
+
+    assert not hasattr(Component, "report_metric")
+
+
+def test_setup_component_requires_componentid():
+    # The pre-Storm-0.10.0 task->component fallback is dropped.
+    from pystorm_a8c.component import Component
+
+    c = Component(input_stream=BytesIO(), output_stream=BytesIO())
+    c._setup_component(
+        {"topology.name": "topo"},
+        {"taskid": 3, "componentid": "my-bolt"},
+    )
+    assert c.component_name == "my-bolt"
+    assert c.task_id == 3
+    assert c.topology_name == "topo"
+
+
+def test_send_message_rejects_non_dict():
+    from pystorm_a8c.component import Component
+
+    c = Component(input_stream=BytesIO(), output_stream=BytesIO())
+    with pytest.raises(TypeError):
+        c.send_message(["not", "a", "dict"])
 
 
 if __name__ == "__main__":
