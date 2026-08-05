@@ -52,6 +52,15 @@ WORKER_PATH = f"{VIRTUALENV_BIN}:/usr/local/bin:/usr/bin:/bin"
 #: Topology's `config` -- rather than accepted and quietly dropped.
 UNSUPPORTED_OPTIONS = {
     "topology.blobstore.map": "built from --venv-blobstore-key",
+    # Dotted, so it looks like a Storm setting, but Apache Storm has no such
+    # key -- verified against 1.2.3's defaults.yaml. streamparse invented it to
+    # tell its SSH fan-out which boxes to reach, and passing it here used to
+    # size the topology as a side effect. Both of those are gone, so it would
+    # now be accepted and do nothing.
+    "storm.workers.list": (
+        "not an Apache Storm setting; it sized the topology as a side effect of "
+        "streamparse's SSH fan-out. Use -o topology.workers=N instead"
+    ),
     "install_virtualenv": "nothing here builds a virtualenv; the blobstore ships one",
     "use_virtualenv": "always on; there is no non-virtualenv worker layout",
     "virtualenv_flags": "flags for a `virtualenv` command this package no longer runs",

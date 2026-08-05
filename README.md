@@ -200,6 +200,11 @@ retired virtualenv keys — `install_virtualenv`, `use_virtualenv`,
 `virtualenv_flags`, `virtualenv_root`, `virtualenv_name` — are refused the same
 way, wherever they appear.
 
+`storm.workers.list` is refused too. It looks like a Storm setting but Apache
+Storm has no such key; `streamparse` invented it to tell its SSH fan-out which
+hosts to reach, and passing it sized the topology as a side effect. Size the
+topology directly with `-o topology.workers=N`.
+
 `log.path`, `log.file`, `log.max_bytes` and `log.backup_count` are refused the
 same way. They configured a rotating file handler on the worker; components now
 log through `StormHandler` into Storm's own logs, so there is no file for those

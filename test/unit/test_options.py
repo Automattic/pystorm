@@ -271,3 +271,18 @@ def test_the_worker_count_comes_from_the_configured_list():
 def test_an_explicit_acker_count_still_passes_through():
     options = resolve(cli_options={"topology.acker.executors": 8})
     assert options["topology.acker.executors"] == 8
+
+
+def test_the_old_worker_list_option_is_refused_with_its_replacement():
+    """It is dotted, so it would otherwise sail through and do nothing.
+
+    Passing it used to set topology.workers as a side effect of streamparse's
+    SSH fan-out. Silently accepting it would resize a topology without saying
+    so -- against a 12-supervisor cluster, `-o storm.workers.list="a,b,c"`
+    would give 12 workers where the deploy asked for 3.
+    """
+    with pytest.raises(ValueError) as exc:
+        resolve(cli_options={"storm.workers.list": "a,b,c"})
+
+    assert "storm.workers.list" in str(exc.value)
+    assert "topology.workers" in str(exc.value)
