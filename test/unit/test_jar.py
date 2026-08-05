@@ -51,9 +51,9 @@ def test_a_symlink_cycle_terminates_instead_of_recursing(project):
 def test_two_symlinks_to_one_directory_are_both_packaged(project):
     """Not a cycle: each link is a distinct package name the worker imports.
 
-    An earlier cycle guard pruned by "already visited" rather than "contains
-    itself" and silently dropped the second -- a JAR that submits fine and
-    then fails at worker start.
+    A guard that pruned on "already visited" rather than "contains itself"
+    would drop the second silently -- a JAR that submits fine and then fails at
+    worker start.
     """
     shared = project / "shared"
     shared.mkdir()

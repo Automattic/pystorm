@@ -19,9 +19,8 @@ GlobalStreamId = storm_thrift.GlobalStreamId
 ThriftGrouping = storm_thrift.Grouping
 StreamInfo = storm_thrift.StreamInfo
 NullStruct = storm_thrift.NullStruct
-# JavaBolt/JavaSpout are dropped, but Grouping.custom_object still builds a
-# JavaObject -- a custom grouping is a Java class even when the components are
-# Python. to_java_arg needs JavaObjectArg for the same reason.
+# Grouping.custom_object builds a JavaObject: a custom grouping is a Java
+# class even when every component is Python.
 JavaObject = storm_thrift.JavaObject
 JavaObjectArg = storm_thrift.JavaObjectArg
 SubmitOptions = storm_thrift.SubmitOptions
@@ -33,10 +32,8 @@ NotAliveException = storm_thrift.NotAliveException
 AlreadyAliveException = storm_thrift.AlreadyAliveException
 InvalidTopologyException = storm_thrift.InvalidTopologyException
 
-# thriftpy2 structs are unhashable by default; the DSL uses GlobalStreamId as
-# a dict key when building ComponentCommon.inputs. The IDL module sets this
-# too -- reasserting it here keeps the invariant with the facade, which is the
-# only thing the rest of the package sees.
+# thriftpy2 structs are unhashable by default, and the DSL uses GlobalStreamId
+# as a dict key when building ComponentCommon.inputs.
 GlobalStreamId.__hash__ = lambda self: hash(self.componentId) ^ hash(self.streamId)
 
 __all__ = [

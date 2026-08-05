@@ -19,27 +19,21 @@ def main():
         "spout and bolt classes on each worker.",
     )
     parser.add_argument("target_class", help="The bolt/spout class to start.")
-    # Storm sends everything as one string, which is not great
+    # Storm passes the whole invocation as a single argument.
     if len(sys.argv) == 2:
         sys.argv = [sys.argv[0]] + sys.argv[1].split()
     args = parser.parse_args()
     mod_name, cls_name = args.target_class.rsplit(".", 1)
-    # Storm unpacks the topology JAR's resources/ into the worker directory
-    # and starts us with the cwd already set to it, so the component packages
-    # are siblings of the cwd rather than children of it. Python does not put
-    # the cwd on sys.path -- only the script's own directory, which here is the
-    # venv's bin/ -- so without this the import fails on every component.
-    #
-    # The resources/ child is appended too because not every Storm layout puts
-    # us inside it; appending a directory that does not exist would be harmless
-    # but is skipped so the path stays honest.
+    # Storm unpacks the JAR's resources/ into the worker directory and starts
+    # us with the cwd inside it, so the component packages are in the cwd.
+    # Python only puts the script's own directory on sys.path -- here the
+    # venv's bin/ -- so without this every component import fails. Storm 1.0.2
+    # and earlier leave the cwd one level up, hence the resources/ child too.
     sys.path.append(os.getcwd())
     resources_path = os.path.join(os.getcwd(), RESOURCES_PATH)
     if os.path.isdir(resources_path):
         sys.path.append(resources_path)
-    # Import module
     mod = importlib.import_module(mod_name)
-    # Get class from module and run it
     cls = getattr(mod, cls_name)
     cls().run()
 

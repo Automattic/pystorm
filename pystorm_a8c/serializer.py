@@ -16,11 +16,9 @@ class JSONSerializer:
     """
 
     def __init__(self, input_stream, output_stream, reader_lock, writer_lock):
-        #: Whether the stream we were handed is the process's ``sys.stdout``,
-        #: i.e. whether a stray ``print()`` would land in Storm's pipe.
-        #: Recorded here because ``_wrap_stream`` returns a *new* TextIOWrapper:
-        #: comparing ``self.output_stream`` against ``sys.stdout`` later is
-        #: always False, which silently disabled the component's redirect.
+        #: Whether a stray ``print()`` would land in Storm's pipe. Recorded
+        #: before wrapping, because ``_wrap_stream`` returns a *new* object
+        #: that never compares equal to ``sys.stdout``.
         self.wraps_stdout = output_stream is sys.stdout
         self.input_stream = self._wrap_stream(input_stream)
         self.output_stream = self._wrap_stream(output_stream)
@@ -37,8 +35,7 @@ class JSONSerializer:
             return io.TextIOWrapper(stream, encoding="utf-8")
         raise TypeError(
             f"Cannot wrap {stream!r} as UTF-8: it has neither .buffer nor "
-            f".readable. Returning it unwrapped would mis-encode every tuple "
-            f"on the multi-lang wire."
+            f".readable, and an unwrapped stream would mis-encode every tuple."
         )
 
     def read_message(self):
@@ -57,8 +54,8 @@ class JSONSerializer:
                 if line == "end":
                     break
                 if line == "":
-                    # Storm occasionally emits stray blank lines; count them so
-                    # a pathological stream is visible without flooding logs.
+                    # Storm emits stray blank lines; log periodically rather
+                    # than per line.
                     self._blank_lines_read += 1
                     if self._blank_lines_read % 1000 == 0:
                         log.warning(

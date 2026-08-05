@@ -48,8 +48,8 @@ def test_spouts_are_rewritten_too():
 def test_the_rewritten_path_matches_what_the_blobstore_delivers():
     """The execution command, the localname and the PATH are one path.
 
-    They used to come from three places that could disagree; a mismatch is a
-    worker that never starts, with nothing in the submit output to say why.
+    A mismatch is a worker that never starts, with nothing in the submit
+    output to say why.
     """
     from pystorm_a8c.cli.submit import (
         blobstore_options,
@@ -119,7 +119,7 @@ def test_a_plain_parallelism_hint_is_left_alone():
 
 
 def test_a_par_dict_missing_this_env_is_refused():
-    """Upstream sent None, which Nimbus silently reads as parallelism 1."""
+    """A None parallelism_hint is read by Nimbus as parallelism 1."""
     from pystorm_a8c.cli.submit import resolve_parallelism
 
     comp = MagicMock()
@@ -174,7 +174,7 @@ def test_submit_does_not_open_an_ssh_tunnel():
 
 
 def test_submit_has_no_user_hooks():
-    """`tasks.py` / `fabfile.py` in the cwd are no longer imported and called."""
+    """Nothing imports or calls `tasks.py` / `fabfile.py` from the cwd."""
     from pystorm_a8c.cli import submit
 
     source = inspect.getsource(submit)
@@ -183,7 +183,7 @@ def test_submit_has_no_user_hooks():
 
 
 def test_a_retired_option_is_refused_with_its_reason():
-    """Refused, not ignored. casterisk used to pass `-o install_virtualenv=0`."""
+    """Refused, not ignored."""
     from pystorm_a8c.cli.submit import check_options_are_consumed
 
     with pytest.raises(ValueError) as exc:
@@ -349,7 +349,7 @@ def test_the_submit_parser_accepts_the_flags_casterisk_deploys_with():
     assert args.wait == 30
     assert args.active is True
     assert args.venv_blobstore_key == "myproject-venv-abc123_tar_gz"
-    # The four venv -o flags this used to carry are derived now.
+    # The venv settings are derived, not passed.
     assert args.options == {"topology.max.spout.pending": 200}
 
 
@@ -378,10 +378,8 @@ def test_submit_topology_refuses_an_empty_key():
 def test_submit_topology_takes_only_keyword_arguments():
     """An outdated positional call must fail, not mean something else.
 
-    The signature used to begin `name=None`, so a leading positional
-    venv_blobstore_key would have made `submit_topology("raws")` keep working
-    while silently submitting an auto-discovered topology against a blobstore
-    key of "raws".
+    A leading positional venv_blobstore_key would let `submit_topology("raws")`
+    keep working while silently meaning a blobstore key rather than a name.
     """
     import inspect
 

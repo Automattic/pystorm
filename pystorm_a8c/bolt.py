@@ -60,9 +60,6 @@ class Bolt(Component):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._source_tuple_types = defaultdict(dict)
-        # Instance attribute, not a class attribute: a shared mutable default
-        # would be aliased across every Bolt instance in the process.
-        # Bolt and subclasses can have more than one current tuple.
         self._current_tups = []
 
     def _setup_component(self, storm_conf, context):
@@ -81,18 +78,11 @@ class Bolt(Component):
 
     @classmethod
     def spec(cls, name=None, inputs=None, par=None, config=None, outputs=None):
-        """Create a topology DSL spec for this bolt.
-
-        Merged in from streamparse's Bolt layer so the two-level component
-        hierarchy collapses into one class.
-        """
+        """Create a topology DSL spec for this bolt."""
         from pystorm_a8c.dsl.bolt import ShellBoltSpec
 
-        # "module.ClassName", not "-m module": pystorm-a8c-run takes the target
-        # as a single positional argument and splits it on the last dot to get
-        # (module, class). A "-m ..." form would be rsplit into the module
-        # "-m pkg.mod" and the class "ClassName", and fail to import on the
-        # worker -- which nothing but a real cluster would catch.
+        # "module.ClassName": pystorm-a8c-run splits the target on the last dot
+        # to get (module, class), so a "-m module" form would not import.
         return ShellBoltSpec(
             cls,
             command="pystorm-a8c-run",
@@ -501,7 +491,6 @@ class TicklessBatchingBolt(BatchingBolt):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.exc_info = None
-        # Upstream fixed this guard for Component in 20d1d49 but never here.
         if hasattr(signal, "SIGUSR1"):
             signal.signal(signal.SIGUSR1, self._handle_worker_exception)
 
@@ -543,18 +532,11 @@ class TicklessBatchingBolt(BatchingBolt):
         """
         with self._batch_lock:
             if self.exc_info is None:
-                # SIGUSR1 arrived without a batcher exception behind it.
-                # signal.signal() is process-global, so the handler in effect
-                # belongs to whichever instance was constructed last -- a stray
-                # signal aimed at a sibling bolt lands here. Re-raising a
-                # TypeError about unpacking None would bury the real cause.
+                # signal.signal() is process-global, so a stray SIGUSR1 aimed
+                # at a sibling bolt lands here with nothing behind it.
                 return
             exc_type, exc_value, exc_tb = self.exc_info
-            # Consume it. The exception is being delivered now, and leaving it
-            # armed means the *next* SIGUSR1 -- a stray one aimed at a sibling
-            # bolt, or one arriving after a bolt with exit_on_exception=False
-            # already recovered -- re-raises this stale exception at whatever
-            # point the main thread has reached by then.
+            # Consume it, so a later stray signal cannot re-raise it.
             self.exc_info = None
             raise exc_value.with_traceback(exc_tb)
 

@@ -12,10 +12,8 @@ from pystorm_a8c.cli import jar, submit
 def build_parser():
     """Build the argparse root.
 
-    This replaces ``sparse``'s ``pkgutil.iter_modules`` auto-discovery with an
-    explicit two-line registry. With two subcommands, auto-discovery was hiding
-    rather than helping -- and it is what let nine unused subcommands persist
-    unnoticed.
+    Subcommands are registered explicitly rather than auto-discovered, so the
+    set of them is visible here.
     """
     parser = argparse.ArgumentParser(
         prog="pystorm-a8c",

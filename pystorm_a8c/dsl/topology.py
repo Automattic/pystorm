@@ -15,9 +15,7 @@ class TopologyType(type):
     def __new__(mcs, classname, bases, class_dict):
         bolt_specs = {}
         spout_specs = {}
-        # Copy ComponentSpec items out of class_dict
         specs = TopologyType.class_dict_to_specs(class_dict)
-        # Perform checks
         for spec in specs.values():
             if isinstance(spec, ShellBoltSpec):
                 TopologyType.add_bolt_spec(spec, bolt_specs)
@@ -50,10 +48,9 @@ class TopologyType(type):
     def class_dict_to_specs(mcs, class_dict):
         """Extract valid `ComponentSpec` entries from `Topology.__dict__`."""
         specs = {}
-        # Set spec names first
         for name, spec in class_dict.items():
             if isinstance(spec, ComponentSpec):
-                # Use the variable name as the specification name.
+                # The variable name is the component name.
                 if spec.name is None:
                     spec.name = name
                 if spec.name in specs:
@@ -101,14 +98,12 @@ class TopologyType(type):
             spec.inputs = {}
         for stream_id, grouping in list(spec.inputs.items()):
             if isinstance(stream_id.componentId, ComponentSpec):
-                # Have to reinsert key after fix because hash changes
+                # Reinsert: the key's hash changes with componentId.
                 del spec.inputs[stream_id]
                 stream_id.componentId = stream_id.componentId.name
                 spec.inputs[stream_id] = grouping
-            # This should never happen, but it's worth checking for
             elif stream_id.componentId is None:
                 raise TypeError("GlobalStreamId.componentId cannot be None.")
-            # Check for invalid fields grouping
             stream_comp = specs[stream_id.componentId]
             valid_fields = set(stream_comp.outputs[stream_id.streamId].output_fields)
             if grouping.fields is not None:
@@ -124,8 +119,6 @@ class TopologyType(type):
 
     def __repr__(cls):
         """:returns: A string representation of the topology"""
-        # TODO: Come up with a better repr that makes it clear the class is not
-        #       actually a StormTopology object
         return repr(getattr(cls, "thrift_topology", None))
 
 

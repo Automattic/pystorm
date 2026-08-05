@@ -135,8 +135,8 @@ def test_log_config_becomes_pystorm_log_options():
 def test_file_logging_keys_are_refused(key):
     """The worker's RotatingFileHandler is gone, so these name nothing.
 
-    They used to be dropped with a warning, which is the accepted-and-ignored
-    shape every other retired setting has stopped using.
+    Refused rather than dropped with a warning, like every other retired
+    setting.
     """
     with pytest.raises(ValueError, match="StormHandler"):
         resolve(env_config={"workers": ["w1"], "log": {"level": "INFO", key: "x"}})
@@ -150,10 +150,8 @@ def test_topology_debug_forces_debug_logging():
 def test_topology_python_path_points_into_the_venv():
     """It names the same directory the execution command does.
 
-    It used to be built from the topology name while the execution command was
-    built from `virtualenv_name`, so with `-o virtualenv_name=venv` the two
-    named different directories -- and this is the one an operator reads first
-    when a worker will not start.
+    This is the path an operator reads first when a worker will not start, so
+    it must not name a different directory from the execution command.
     """
     from pystorm_a8c.cli.submit import VIRTUALENV_BIN
 
@@ -276,10 +274,9 @@ def test_an_explicit_acker_count_still_passes_through():
 def test_the_old_worker_list_option_is_refused_with_its_replacement():
     """It is dotted, so it would otherwise sail through and do nothing.
 
-    Passing it used to set topology.workers as a side effect of streamparse's
-    SSH fan-out. Silently accepting it would resize a topology without saying
-    so -- against a 12-supervisor cluster, `-o storm.workers.list="a,b,c"`
-    would give 12 workers where the deploy asked for 3.
+    Silently accepting it would resize a topology without saying so: against a
+    12-supervisor cluster, `-o storm.workers.list="a,b,c"` gives 12 workers
+    where the deploy asked for 3.
     """
     with pytest.raises(ValueError) as exc:
         resolve(cli_options={"storm.workers.list": "a,b,c"})

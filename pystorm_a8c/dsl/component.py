@@ -107,10 +107,8 @@ class ComponentSpec:
                         stream_id = GlobalStreamId(
                             componentId=component_id, streamId="default"
                         )
-                        # Can only automatically determine if grouping should be
-                        # direct when given a ComponentSpec.  If
-                        # GlobalStreamId, we're out of luck.
-                        # TODO: Document this.
+                        # A direct grouping can only be inferred from a
+                        # ComponentSpec, not from a GlobalStreamId.
                         default_stream = input_spec.common.streams.get("default")
                         if default_stream is not None and default_stream.direct:
                             grouping = Grouping.DIRECT
@@ -179,7 +177,7 @@ class ComponentSpec:
                 "Invalid stream for {}: {!r}. Valid streams are: "
                 "{}".format(self.name, stream, list(self.common.streams.keys()))
             )
-        # If name is None, because it hasn't been set yet, use object instead
+        # Before the metaclass assigns names, key on the object itself.
         component_id = self.name or self
         return GlobalStreamId(componentId=component_id, streamId=stream)
 

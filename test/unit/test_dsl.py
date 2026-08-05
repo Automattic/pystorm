@@ -345,7 +345,7 @@ class TopologyTests(unittest.TestCase):
 
 
 class ShellSpecTests(unittest.TestCase):
-    """Validation coverage that used to run through ShellBolt/ShellSpout.
+    """`ShellComponentSpec` validates command and script.
 
     Those two streamparse wrapper classes existed for non-Python components
     and are dropped, but the ShellComponentSpec argument checks behind them
@@ -495,7 +495,7 @@ class CustomGroupingTests(unittest.TestCase):
         self.assertEqual(grouping.custom_serialized, b"\xde\xad\xbe\xef")
 
     def test_custom_serialized_rejects_a_str(self):
-        """It used to *return* the TypeError instead of raising it."""
+        """A str is not a serialized Java class."""
         with self.assertRaises(TypeError):
             Grouping.custom_serialized("deadbeef")
 

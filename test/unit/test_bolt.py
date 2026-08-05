@@ -18,7 +18,7 @@ from pystorm_a8c.exceptions import StormWentAwayError
 
 log = logging.getLogger(__name__)
 
-# Minimal handshake context for tests that stub out read_handshake. It used to
+# Minimal handshake context for tests that stub out read_handshake.
 # be `{}`, which only worked because _setup_component fell back to
 # `task->component` when `componentid` was missing and defaulted
 # `source->stream->fields` to `{}`. Both fallbacks are gone -- Storm 0.10.0+

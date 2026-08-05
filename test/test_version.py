@@ -40,7 +40,7 @@ def test_the_prerelease_marker_is_written_in_canonical_form():
 
 
 def test_version_carries_no_epoch_or_local_label():
-    # The distribution name already distinguishes this from upstream pystorm;
+    # The distribution name already distinguishes this package;
     # the retired +a8c.N suffix scheme must not creep back in.
     assert "!" not in pystorm_a8c.__version__
     assert "+" not in pystorm_a8c.__version__

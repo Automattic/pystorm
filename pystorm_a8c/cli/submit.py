@@ -32,19 +32,15 @@ THRIFT_CHUNK_SIZE = 307200
 
 RUN_COMMAND = "pystorm-a8c-run"
 
-#: Where the blobstore drops the virtualenv, and what it is called there.
-#:
-#: These are constants, not settings. Storm starts the multi-lang subprocess
-#: with its cwd already inside the unpacked ``resources/``, so ``..`` is the
-#: worker directory -- which is where the blobstore extracts ``localname``.
-#: Every piece of the deploy has to agree on this one path, so it is derived
-#: in one place rather than assembled from options that could disagree.
+#: Where the blobstore drops the virtualenv. Storm starts the multi-lang
+#: subprocess with its cwd inside the unpacked ``resources/``, so ``..`` is the
+#: worker directory, which is where the blobstore extracts ``localname``.
 VIRTUALENV_NAME = "venv"
 VIRTUALENV_ROOT = ".."
 VIRTUALENV_BIN = f"{VIRTUALENV_ROOT}/{VIRTUALENV_NAME}/bin"
 
-#: PATH the workers run with. The venv's bin comes first so the component's
-#: interpreter and console scripts win over anything on the supervisor.
+#: The venv's bin comes first so the component's interpreter and console
+#: scripts win over anything installed on the supervisor.
 WORKER_PATH = f"{VIRTUALENV_BIN}:/usr/local/bin:/usr/bin:/bin"
 
 #: Options this package will not act on, and the reason. Refused wherever they
@@ -52,32 +48,26 @@ WORKER_PATH = f"{VIRTUALENV_BIN}:/usr/local/bin:/usr/bin:/bin"
 #: Topology's `config` -- rather than accepted and quietly dropped.
 UNSUPPORTED_OPTIONS = {
     "topology.blobstore.map": "built from --venv-blobstore-key",
-    # Dotted, so it looks like a Storm setting, but Apache Storm has no such
-    # key -- verified against 1.2.3's defaults.yaml. streamparse invented it to
-    # tell its SSH fan-out which boxes to reach, and passing it here used to
-    # size the topology as a side effect. Both of those are gone, so it would
-    # now be accepted and do nothing.
+    # Dotted, so it reads like a Storm setting, but Apache Storm has no such
+    # key: it would be accepted and do nothing.
     "storm.workers.list": (
         "not an Apache Storm setting; it sized the topology as a side effect of "
         "streamparse's SSH fan-out. Use -o topology.workers=N instead"
     ),
     "install_virtualenv": "nothing here builds a virtualenv; the blobstore ships one",
     "use_virtualenv": "always on; there is no non-virtualenv worker layout",
-    "virtualenv_flags": "flags for a `virtualenv` command this package no longer runs",
+    "virtualenv_flags": "nothing here runs the `virtualenv` command",
     "virtualenv_name": f"the venv is always {VIRTUALENV_ROOT}/{VIRTUALENV_NAME}",
     "virtualenv_root": f"the venv is always {VIRTUALENV_ROOT}/{VIRTUALENV_NAME}",
     "use_ssh_for_nimbus": "Nimbus is always contacted directly",
     # A config.json `log` block is checked with its keys prefixed, so these
-    # name `log.path`, `log.file` and so on. Only `log.level` survives: the
-    # rest configured a RotatingFileHandler the worker no longer installs, so
-    # they named a destination nothing would ever write to.
+    # name `log.path`, `log.file` and so on. Only `log.level` is honoured.
     "log_path": "worker logging goes to Storm's own logs via StormHandler",
     "log_file": "worker logging goes to Storm's own logs via StormHandler",
     "log_max_bytes": "there is no rotating file handler on the worker to size",
     "log_backup_count": "there is no rotating file handler on the worker to rotate",
 }
-# `serializer` is deliberately absent: it is still consumed, by
-# util.set_topology_serializer, which accepts "json" and refuses anything else.
+# `serializer` is absent on purpose: util.set_topology_serializer consumes it.
 
 
 # ------------------------------------------------------------ -o parsing
@@ -87,12 +77,8 @@ def parse_option(raw):
     """Parse a single ``-o key=value`` argument.
 
     Values are parsed as JSON when possible so ints, floats, bools and JSON
-    objects survive; anything else stays a string.
-
-    This replaces upstream's ``ruamel.yaml`` parse, the last non-``thriftpy2``
-    runtime dependency. JSON is a subset of YAML for every value the deploy
-    actually passes, and it is stricter in the one place that matters: YAML
-    would coerce bare words like ``on``/``yes`` to booleans.
+    objects survive; anything else stays a string. Bare words like ``on`` and
+    ``yes`` therefore stay strings rather than becoming booleans.
     """
     key, sep, value = raw.partition("=")
     if not sep:
@@ -109,7 +95,6 @@ class _StoreDictAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         if getattr(namespace, self.dest, None) is None:
             setattr(namespace, self.dest, {})
-        # Only doing a copy here because that's what _AppendAction does
         items = copy.copy(getattr(namespace, self.dest))
         try:
             key, val = parse_option(values)
@@ -122,15 +107,9 @@ class _StoreDictAction(argparse.Action):
 def blobstore_options(venv_blobstore_key, environment=None):
     """The Storm settings that put a virtualenv on every worker.
 
-    ``bin/topo-submit`` used to spell these out as four ``-o`` flags whose
-    values had to agree with each other -- the blobstore ``localname``, the
-    ``PATH``, and two virtualenv keys that all encode the same path. Deriving
-    them from the one key that actually varies removes the chance to get that
-    agreement wrong.
-
-    ``virtualenv_name`` and ``virtualenv_root`` are deliberately *not* emitted.
-    They are constants now, and nothing -- here or in Storm -- reads them, so
-    sending them would just put two more dead keys in the topology conf.
+    The blobstore ``localname``, the ``PATH`` and the execution command all
+    encode the same path, so all of them are derived from the one key that
+    varies rather than passed separately.
 
     :param environment: extra worker environment variables to carry alongside
                         the derived ``PATH``. ``PATH`` itself is not accepted;
@@ -147,10 +126,8 @@ def blobstore_options(venv_blobstore_key, environment=None):
 def check_worker_environment(environment):
     """``topology.environment`` may add variables, but not redefine ``PATH``.
 
-    Setting extra variables is ordinary -- ``TZ``, ``LD_LIBRARY_PATH``, an SDK
-    credential. ``PATH`` is not: it has to put the venv's ``bin`` first, or the
-    component runs under whatever interpreter the supervisor happens to have,
-    which is the failure the derived value exists to prevent.
+    ``PATH`` has to put the venv's ``bin`` first, or the component runs under
+    whatever interpreter the supervisor happens to have.
     """
     if environment is None:
         return
@@ -171,11 +148,9 @@ def check_worker_environment(environment):
 def check_options_are_consumed(options, source):
     """Refuse any option this package will not act on.
 
-    Storm conf keys are dotted -- ``topology.*``, ``storm.*``, ``pystorm.*`` --
-    and are forwarded to Nimbus untouched. A bare word is addressed to
-    ``pystorm-a8c`` itself, and after the virtualenv settings became constants
-    there is nothing left for one to mean. Silently passing it on is how
-    ``virtualenv_flags`` sat in the topology conf for years doing nothing.
+    Storm conf keys are dotted and forwarded to Nimbus untouched. A bare word
+    is addressed to ``pystorm-a8c`` itself, and there is nothing left for one
+    to mean, so it is an error rather than a setting that does nothing.
 
     :param source: where these options came from, for the error message.
     """
@@ -198,17 +173,15 @@ def resolve_options(cli_options, env_config, topology_class, venv_blobstore_key=
 
     CLI options > Topology options > config.json options
 
-    The settings derived from ``venv_blobstore_key`` are applied last of all,
-    because nothing else is allowed to set them -- see
-    :func:`check_options_are_consumed`.
+    The settings derived from ``venv_blobstore_key`` are applied last and are
+    not overridable.
 
     .. note::
-       The worker-count lookup below runs before the submit's own Nimbus client
-       exists, so it does not see ``--timeout``. It uses
-       :data:`~pystorm_a8c.util.DEFAULT_NIMBUS_TIMEOUT_MS` instead, which is
-       the same value that flag defaults to. Threading the CLI value down to
-       ``get_storm_workers`` would mean changing its signature, and
-       casterisk-realtime's conftest.py replaces that function.
+       The worker-count lookup runs before the submit's own Nimbus client
+       exists, so it does not see ``--timeout`` and uses
+       :data:`~pystorm_a8c.util.DEFAULT_NIMBUS_TIMEOUT_MS`. Passing the CLI
+       value down would change ``get_storm_workers``'s signature, which
+       casterisk-realtime's conftest.py depends on.
     """
     log_config = env_config.get("log", {})
     for options, source in (
@@ -242,45 +215,32 @@ def resolve_options(cli_options, env_config, topology_class, venv_blobstore_key=
         )
 
     storm_options = {}
-
-    # Start with environment options
     storm_options.update(env_config.get("options", {}))
 
-    # Built from the same constants as the execution command, so the two cannot
-    # name different directories. Informational only; nothing reads it.
+    # Informational only; nothing reads it. Built from the same constants as
+    # the execution command so the two cannot name different directories.
     storm_options["topology.python.path"] = f"{VIRTUALENV_BIN}/python"
 
     if isinstance(log_config.get("level"), str):
         storm_options["pystorm.log.level"] = log_config["level"].lower()
 
-    # Override options with topology options
     storm_options.update(topology_class.config)
-
-    # Override options with CLI options
     storm_options.update(cli_options or {})
 
-    # The venv wiring goes on last and is not overridable: every other source
-    # was just checked for these keys and refused. `topology.environment` is
-    # the exception -- extra variables are merged in, with PATH still ours.
+    # `topology.environment` is the one derived setting a caller may add to:
+    # extra variables are merged in, with PATH still ours.
     if venv_blobstore_key is not None:
         environment = storm_options.get("topology.environment")
         check_worker_environment(environment)
         storm_options.update(blobstore_options(venv_blobstore_key, environment))
 
-    # Set log level to debug if topology.debug is set
     if storm_options.get("topology.debug", False):
         storm_options["pystorm.log.level"] = "debug"
 
-    # Default the worker count to the size of the cluster -- one JVM per
-    # supervisor. Storm's own default is 1, which would run an entire topology
-    # in a single process on a single host.
-    #
-    # `topology.acker.executors` is deliberately left alone: Storm's default is
-    # null, and null already means "equal to the number of workers configured
-    # for this topology", so setting it here only restated what Storm does.
-    #
-    # The worker *list* is not put in the conf either: nothing reads it -- it
-    # was a streamparse key for an SSH fan-out that no longer exists.
+    # One worker JVM per supervisor. Storm's own default is 1, which would run
+    # an entire topology in a single process on a single host.
+    # `topology.acker.executors` is left unset on purpose: Storm reads null as
+    # "equal to the worker count", which is what we would set anyway.
     if storm_options.get("topology.workers") is None:
         storm_options["topology.workers"] = len(get_storm_workers(env_config))
 
@@ -294,10 +254,8 @@ def rewrite_execution_commands(topology_class):
     """Point every shell component at the entry point inside the venv.
 
     Produces ``"../venv/bin/pystorm-a8c-run"``, matching the blobstore
-    ``localname`` and the PATH that :func:`blobstore_options` sets, because all
-    three are built from the same constants. This is the a8c deploy mechanism;
-    the path has to line up with the venv tarball that was uploaded under
-    ``--venv-blobstore-key``.
+    ``localname`` and the PATH from :func:`blobstore_options` -- all three come
+    from the same constants, and the venv tarball has to contain that path.
     """
     run_path = f"{VIRTUALENV_BIN}/{RUN_COMMAND}"
     shells = chain(
@@ -316,11 +274,10 @@ def resolve_parallelism(topology_class, env_name):
     serve several clusters. Thrift only accepts an int, so the dict has to be
     resolved before submission.
 
-    A dict that has no entry for ``env_name`` is an error. Upstream used
-    ``.get()`` here, which sent ``None`` to Nimbus; Nimbus reads that as "field
-    absent" and silently runs the component at parallelism 1. On a topology
-    sized for hundreds of executors that is an outage that submits cleanly, so
-    refuse it instead and name what is missing.
+    A dict with no entry for ``env_name`` is an error rather than a ``None``
+    sent to Nimbus: Nimbus reads a missing ``parallelism_hint`` as "field
+    absent" and runs the component at parallelism 1, so a topology sized for
+    hundreds of executors would submit cleanly and come up crippled.
     """
     missing = []
     for name, thrift_component in chain(
@@ -451,17 +408,12 @@ def submit_topology(
 ):
     """Submit a topology to a remote Storm cluster.
 
+    Keyword-only on purpose, so that a call written against an older argument
+    order fails instead of binding a topology name to ``venv_blobstore_key``.
+
     :param venv_blobstore_key: blobstore key of the virtualenv tarball the
                                workers run out of. Required: there is no
                                worker layout without one.
-
-    .. note::
-       Every parameter is keyword-only, and deliberately so. This function used
-       to begin ``name=None``, so had ``venv_blobstore_key`` been added as a
-       leading positional, an existing ``submit_topology("raws")`` would have
-       kept working while silently meaning something else entirely -- a
-       blobstore key of "raws" and an auto-discovered topology. Keyword-only
-       turns that into a TypeError at the call site.
     """
     if not venv_blobstore_key:
         raise ValueError(
@@ -474,25 +426,18 @@ def submit_topology(
     topology_class = get_topology_from_file(topology_file)
     if override_name is None:
         override_name = name
-    # Handle option conflicts
     options = resolve_options(
         options, env_config, topology_class, venv_blobstore_key=venv_blobstore_key
     )
-
-    # Point the specs at the venv the blobstore is about to deliver.
     rewrite_execution_commands(topology_class)
-
-    # In case we're overriding things, let's save the original name
     options["topology.original_name"] = name
-
-    # Set parallelism based on env_name if necessary
     resolve_parallelism(topology_class, env_name)
 
     if local_jar_path:
         print(f"Using prebuilt JAR: {local_jar_path}")
     elif not remote_jar_path:
-        # Imported here rather than at module scope because pystorm_a8c.cli
-        # imports both submit and jar; a top-level import would be a cycle.
+        # Imported here, not at module scope: pystorm_a8c.cli imports both
+        # submit and jar, so a top-level import would be a cycle.
         from pystorm_a8c.cli.jar import build_jar
 
         local_jar_path = build_jar()
@@ -578,8 +523,8 @@ def subparser_hook(subparsers):
         action=_StoreDictAction,
         help='Storm conf setting, e.g. "-o topology.debug=true". May be '
         "repeated. Keys are dotted Storm conf names and pass through "
-        "untouched; a bare word is refused, because this package no longer "
-        "has settings of its own.",
+        "untouched; a bare word is refused, because this package has no "
+        "settings of its own.",
     )
     subparser.add_argument(
         "--venv-blobstore-key",
@@ -587,13 +532,9 @@ def subparser_hook(subparsers):
         required=True,
         metavar="KEY",
         help="Blobstore key of the virtualenv tarball the workers run out of. "
-        f"Sets up the blobstore map, the worker PATH, and the "
-        f"{RUN_COMMAND!r} path inside {VIRTUALENV_BIN!r} -- all of which have "
-        "to agree, which is why they are derived from this one value rather "
-        "than passed separately.",
+        f"Derives the blobstore map, the worker PATH, and the {RUN_COMMAND!r} "
+        f"path inside {VIRTUALENV_BIN!r}.",
     )
-    # Mutually exclusive: passing both used to warn and silently drop -j.
-    # Reporting the conflict is argparse's job and one less branch here.
     jar = subparser.add_mutually_exclusive_group()
     jar.add_argument(
         "-j",

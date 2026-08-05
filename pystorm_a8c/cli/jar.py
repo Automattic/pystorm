@@ -15,18 +15,15 @@ EXCLUDED_DIRS = {"__pycache__", ".git", ".pytest_cache", ".mypy_cache"}
 EXCLUDED_SUFFIXES = (".pyc", ".pyo", ".pyd")
 EXCLUDED_NAMES = {".DS_Store"}
 
-# A fixed timestamp keeps rebuilds byte-identical, which keeps the blobstore
-# digest in bin/topo-submit stable across rebuilds of unchanged code.
-# ZIP cannot store years before 1980.
+# A fixed timestamp makes rebuilds of an unchanged tree byte-identical, so the
+# blobstore digest stays stable. ZIP cannot store years before 1980.
 _ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
 
 
 def _dir_key(path):
     """``(st_dev, st_ino)`` identifying a directory.
 
-    An OSError here propagates: a source tree we cannot stat is a broken build,
-    and swallowing it dropped the directory out of cycle detection and then
-    walked it anyway.
+    An OSError propagates: a source tree we cannot stat is a broken build.
     """
     stat = os.stat(path)
     return (stat.st_dev, stat.st_ino)
@@ -35,8 +32,7 @@ def _dir_key(path):
 def _contains_itself(root, key, keys_by_path):
     """Is ``root`` a link back to a directory it is already nested inside?
 
-    Only ``root``'s own ancestors are consulted; os.walk is top-down, so every
-    one of them has been recorded by the time we get here.
+    os.walk is top-down, so every ancestor has been recorded by now.
     """
     parent = os.path.dirname(root)
     while parent in keys_by_path:
@@ -52,17 +48,14 @@ def _contains_itself(root, key, keys_by_path):
 def _collect(src_dir):
     """Yield (absolute_path, posix_arcname) pairs, following symlinks.
 
-    ``followlinks=True`` is required, not stylistic: casterisk-realtime's
-    ``src/casterisk`` is a symlink to ``../casterisk``, and os.walk skips
-    symlinked directories by default -- which yields an empty JAR.
+    ``followlinks=True`` is required: a project's ``src/<pkg>`` is often a
+    symlink, and os.walk skips symlinked directories by default, which yields
+    an empty JAR.
 
-    Following links leaves os.walk with no loop protection of its own, so each
-    directory is compared against its own ANCESTORS by (st_dev, st_ino) and
-    pruned if it turns out to contain itself. Ancestors only: two symlinks
-    aimed at one real directory are not a loop, and each belongs in the JAR
-    under its own name. Pruning on any earlier visit instead drops the second
-    silently -- a JAR that builds, passes the non-empty check, submits, and
-    then fails at worker start.
+    That leaves os.walk with no loop protection, so each directory is compared
+    against its own ancestors and pruned if it contains itself. Ancestors only
+    -- two symlinks aimed at one real directory are not a loop, and each
+    belongs in the JAR under its own name.
     """
     src_dir = pathlib.Path(src_dir)
     if not src_dir.is_dir():
@@ -93,10 +86,8 @@ def build_jar(src_dir="src", output_path=None):
     entries = list(_collect(src_dir))
     if not entries:
         raise RuntimeError(
-            f"no files to package under {src_dir!r}. If it contains a symlink, "
-            "note that only directories reachable with followlinks=True are "
-            "walked -- an empty JAR submits successfully and then fails at "
-            "worker start, so this is a hard error."
+            f"no files to package under {src_dir!r}. An empty JAR submits "
+            "successfully and then fails at worker start, so this is an error."
         )
 
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:

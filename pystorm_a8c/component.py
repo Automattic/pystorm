@@ -74,25 +74,14 @@ class LogStream(io.TextIOBase):
     """Object that implements enough of the Python stream API to be used as
     sys.stdout. Messages are written to the Python logger.
 
-    Subclasses ``io.TextIOBase`` rather than ``object`` because this really is
-    installed as ``sys.stdout`` for the life of the worker, and callers ask a
-    stream more than ``write``/``flush``. ``isatty()`` in particular is
-    consulted at import time by anything that colourizes or draws progress
-    bars, and a bare class answered that -- and ``encoding``, ``writable()``
-    -- with AttributeError.
+    This is installed as ``sys.stdout`` for the life of the worker, so it
+    subclasses ``io.TextIOBase`` and answers what callers ask a stream --
+    ``isatty()`` in particular, which colour and progress-bar libraries
+    consult at import time. ``line_buffering``, ``name`` and ``reconfigure``
+    live on ``io.TextIOWrapper``, so they are supplied here.
 
-    ``io.TextIOBase`` covers most of the surface but not all of it:
-    ``line_buffering``, ``name`` and ``reconfigure`` belong to
-    ``io.TextIOWrapper``, so they are supplied here. Two things are withheld
-    on purpose:
-
-    ``buffer`` -- a caller that reached it would write bytes past the logger
-    and straight into Storm's multi-lang pipe.
-
-    ``fileno()`` -- inherited, so it raises ``io.UnsupportedOperation``.
-    Handing back the true stdout descriptor would let a subprocess corrupt
-    that same pipe. ``UnsupportedOperation`` is what callers already expect
-    from a non-file stream, so the ones that probe defensively still work.
+    ``buffer`` and ``fileno()`` are withheld on purpose: either one would let
+    a caller write past the logger and into Storm's multi-lang pipe.
     """
 
     def __init__(self, logger):
@@ -116,8 +105,7 @@ class LogStream(io.TextIOBase):
 
     @property
     def line_buffering(self):
-        # Every write is handed to the logger immediately, so from a caller's
-        # point of view this is at least as eager as line buffering.
+        # Every write goes to the logger immediately.
         return True
 
     def reconfigure(
@@ -131,15 +119,10 @@ class LogStream(io.TextIOBase):
     ):
         """Accept the buffering knobs, refuse anything this stream cannot do.
 
-        ``sys.stdout.reconfigure(...)`` is a common idiom for forcing UTF-8 or
-        line buffering at startup. ``line_buffering`` and ``write_through`` are
-        already true of this stream, so accepting them is honest.
-
-        The rest is refused rather than swallowed. Text reaches the logger as
-        `str` and is encoded by the handler, so there is no decode step here to
-        re-point and no line endings to translate -- accepting `encoding`,
-        `errors` or `newline` would be one more setting that looks applied and
-        is not.
+        ``line_buffering`` and ``write_through`` are already true here. The
+        rest is refused rather than swallowed: text goes to the logger as
+        `str`, so there is no decode step to re-point and no line endings to
+        translate.
         """
         if encoding is not None and encoding.lower().replace("_", "-") not in (
             "utf-8",
@@ -241,23 +224,17 @@ class Component:
 
     exit_on_exception = True
 
-    # Topology-DSL attributes. These lived on streamparse's Component subclass,
-    # which no longer exists now that the two-level hierarchy is collapsed into
-    # one. ComponentSpec reads all three whenever spec() is called without an
-    # explicit override, so they have to be defined here or every spec() call
-    # dies with AttributeError.
+    # Topology-DSL defaults. ComponentSpec reads all three whenever spec() is
+    # called without an explicit override.
     outputs = None
     par = 1
     config = None
 
     @classmethod
     def spec(cls, *args, **kwargs):
-        """Only here to produce a useful error message.
+        """Overridden by Bolt and Spout.
 
-        Bolt and Spout each override this. Reaching the base implementation
-        means someone put a bare Component subclass in a Topology, and the
-        topology metaclass' "bolts or spouts" check would otherwise fire much
-        later with a far less obvious message.
+        Reaching this means a bare Component subclass was put in a Topology.
         """
         raise TypeError(
             f"Specifications should either be bolts or spouts. Given: {cls!r}"
@@ -269,9 +246,8 @@ class Component:
         output_stream=sys.stdout,
         exit_on_exception=None,
     ):
-        # `exit_on_exception` defaults to None rather than True so that the
-        # class attribute above stays authoritative for subclasses that set it
-        # (TicklessBatchingBolt subclasses do). Passing it explicitly overrides.
+        # None, not True, so the class attribute stays authoritative for
+        # subclasses that set it. Passing it explicitly overrides.
         if exit_on_exception is not None:
             self.exit_on_exception = exit_on_exception
         # Ensure we don't fall back on the platform-dependent encoding and
@@ -312,8 +288,7 @@ class Component:
         self.storm_conf = storm_conf
         self.context = context
 
-        # Set up logging. `pystorm.log.path` is never set in any config we
-        # ship, so file logging is gone -- the handler is always StormHandler.
+        # Always StormHandler: worker logs go to Storm, not to a file.
         self.logger = logging.getLogger(".".join((__name__, self.component_name)))
         root_log = logging.getLogger()
         log_level = self.storm_conf.get("pystorm.log.level", "info")
@@ -337,10 +312,8 @@ class Component:
         root_log.addHandler(handler)
         self.logger.setLevel(log_level)
         logging.getLogger("pystorm").setLevel(log_level)
-        # Redirect stdout to ensure that print statements/functions
-        # won't disrupt the multilang protocol. The serializer records this at
-        # construction time: its `output_stream` is a wrapper around
-        # sys.stdout.buffer, so comparing it to sys.stdout never matches.
+        # Redirect stdout so print statements cannot disrupt the multi-lang
+        # protocol.
         if self.serializer.wraps_stdout:
             sys.stdout = LogStream(logging.getLogger("pystorm.stdout"))
 
@@ -382,8 +355,6 @@ class Component:
     def send_message(self, message):
         """Send a message to Storm via stdout."""
         if not isinstance(message, dict):
-            # Silently dropping a malformed message is how protocol desyncs
-            # become invisible. Fail where the mistake was made.
             raise TypeError(
                 "{}.{} attempted to send a non-dict message to Storm: {!r}".format(
                     self.component_name, self.pid, message

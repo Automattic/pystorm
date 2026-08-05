@@ -125,11 +125,8 @@ def test_nimbus_storm_version_parses_tuple():
 
 
 def test_nimbus_storm_version_propagates_a_failure():
-    """It used to swallow everything into (0, 0, 0).
-
-    Storm < 0.10.0 has no getVersion and is not supported here, so in practice
-    that only hid timeouts, auth failures and wrong hosts -- reported as
-    "ancient Storm", which then silently skipped the topology-name check.
+    """Swallowing it would report a timeout or a wrong host as an old Storm,
+    which silently skips the topology-name check downstream.
     """
     from pystorm_a8c.util import nimbus_storm_version
 
@@ -177,9 +174,7 @@ def test_get_env_config_rejects_ambiguous_env(tmp_path):
 
 
 def test_each_call_reads_the_file_it_was_given(tmp_path):
-    """Upstream memoized unconditionally, so the second caller to pass an
-    explicit file got the first caller's config back. There is no memo at all
-    now, which is the simplest way to keep that impossible."""
+    """Two calls with different files must not return the same config."""
     from pystorm_a8c.util import get_config
 
     first = write_config(tmp_path, {"envs": {"a": {"nimbus": "h1"}}})
@@ -191,7 +186,7 @@ def test_each_call_reads_the_file_it_was_given(tmp_path):
 
 
 def test_get_config_accepts_an_open_file(tmp_path):
-    """Upstream's signature took a file object; keep taking one."""
+    """The signature accepts a file object as well as a path."""
     from pystorm_a8c.util import get_config
 
     cfg = write_config(tmp_path, {"envs": {"a": {}}})
@@ -309,11 +304,9 @@ def make_topology_class(scripts=("mypkg.mod.MyBolt",)):
 def test_json_serializer_does_not_touch_the_script():
     """casterisk's config.json says `"serializer": "json"`.
 
-    Upstream prepended `-s json ` to every component's script. Task 8 removed
-    the `--serializer` flag from `pystorm-a8c-run`, so that prefix now makes
-    argparse exit non-zero on every worker -- a config that has been inert for
-    years would start breaking deploys. JSON is the only protocol, so the
-    script is left exactly as the spec built it.
+    `pystorm-a8c-run` has no `--serializer` flag, so prefixing the script with
+    one would make argparse exit non-zero on every worker. JSON is the only
+    protocol, so the script is left exactly as the spec built it.
     """
     from pystorm_a8c.util import set_topology_serializer
 

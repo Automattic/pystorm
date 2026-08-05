@@ -39,19 +39,13 @@ def park_batcher_threads():
     """Stop built bolts' batcher threads from outliving their test.
 
     `TicklessBatchingBolt` starts a daemon thread in `__init__` and has no stop
-    hook -- in production the thread lives as long as the worker process, which
-    is the point. In tests it means an `ExplodingBolt` keeps raising every
-    `secs_between_batches` for the rest of the session. Park each thread on a
-    long sleep instead.
+    hook, so an `ExplodingBolt` would keep raising every `secs_between_batches`
+    for the rest of the session. Park each thread on a long sleep instead.
 
-    os.kill stays patched across the test *and* this teardown, which is the
-    part that matters. A test that patches os.kill itself only holds it until
-    its own `with` block exits, and the batcher keeps firing in the gap before
-    the fixture runs. In that gap a real SIGUSR1 reaches a process whose
-    handler is still a bolt method with `exc_info` armed, and "batch blew up"
-    is re-raised wherever the main thread happens to be -- which is how this
-    file turned CI red from inside pytest's terminal writer, on whichever
-    Python version lost the race that run.
+    os.kill stays patched across the test *and* this teardown: a test that
+    patches it itself only holds the patch until its own `with` block exits,
+    and a real SIGUSR1 fired in that gap re-raises the batcher's exception
+    wherever the main thread happens to be.
     """
     with patch("os.kill"):
         yield
@@ -93,11 +87,8 @@ def test_batches_are_processed_on_the_timer():
 
 
 def test_batcher_thread_survives_an_exception_and_keeps_batching():
-    """Regression guard for a8c commit 24fe387.
-
-    Before that fix the try/except sat outside the `while True`, so the first
-    exception killed the batcher thread permanently and, with
-    exit_on_exception=False, the bolt silently stopped batching forever.
+    """With the try/except outside the loop, the first exception would kill
+    the batcher thread permanently and the bolt would stop batching forever.
     """
     bolt = build(ExplodingBolt)
     with (
@@ -159,12 +150,11 @@ def test_group_key_splits_batches():
     assert sorted(k for k, _ in bolt.processed) == [0, 1]
 
 
-def test_both_batching_classes_exist_with_upstream_hierarchy():
-    """Pin the two-class shape, since an earlier revision flattened it.
+def test_both_batching_classes_exist_with_the_expected_hierarchy():
+    """`TicklessBatchingBolt` must stay a *subclass* of `BatchingBolt`.
 
-    `TicklessBatchingBolt` must stay a *subclass* of `BatchingBolt`: that is
-    what keeps the MRO of the ten casterisk bolts identical to pre-migration,
-    and it is the property a well-meaning cleanup is most likely to undo.
+    Consumer bolts inherit from these, so flattening the hierarchy would
+    change their MRO.
     """
     from pystorm_a8c.bolt import BatchingBolt, Bolt, TicklessBatchingBolt
 

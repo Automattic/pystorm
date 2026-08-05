@@ -10,8 +10,7 @@ def to_java_arg(arg):
     if isinstance(arg, bool):
         java_arg = JavaObjectArg(bool_arg=arg)
     elif isinstance(arg, int):
-        # Just use long all the time since Python 3 doesn't
-        # distinguish between long and int
+        # Always long: Python 3 has no separate int type to distinguish.
         java_arg = JavaObjectArg(long_arg=arg)
     elif isinstance(arg, bytes):
         java_arg = JavaObjectArg(binary_arg=arg)

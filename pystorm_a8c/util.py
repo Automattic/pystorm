@@ -1,10 +1,6 @@
 """
-Configuration loading and the Nimbus Thrift client.
-
-Ported from ``streamparse.util`` with everything SSH-shaped removed. Nimbus is
-always contacted directly: the tunnel, the port-probe, the ``fabric``-driven
-remote command helpers and the log-file plumbing that only existed to reach
-worker boxes over SSH are all gone.
+Configuration loading and the Nimbus Thrift client. Nimbus is always contacted
+directly; there is no SSH tunnel.
 """
 
 import importlib
@@ -25,10 +21,9 @@ DEFAULT_NIMBUS_PORT = 6627
 NIMBUS_ENV_VAR = "PYSTORM_A8C_NIMBUS"
 
 #: Milliseconds to wait on a Nimbus socket when no caller supplies a value.
-#: Must not be left as `None`: thriftpy2 maps a falsy timeout to
-#: `socket_timeout=None`, i.e. a blocking socket, so a Nimbus that accepts the
-#: connection and then hangs would wedge the submit forever. Matches the
-#: default of `pystorm-a8c submit --timeout`.
+#: Never leave this `None`: thriftpy2 maps a falsy timeout to a blocking
+#: socket, so a Nimbus that accepts the connection and then hangs would wedge
+#: the submit forever.
 DEFAULT_NIMBUS_TIMEOUT_MS = 7000
 
 
@@ -43,10 +38,6 @@ def get_config(config_file=None):
                         directory is used.
 
     :returns: a `dict` representing the parsed config.
-
-    Not memoized. A submit reads the config a handful of times and the file is
-    tiny; a module-level cache bought nothing and made the process remember a
-    config.json across calls, which is wrong anywhere but a one-shot CLI.
     """
     if config_file is None:
         config_file = "config.json"
@@ -54,8 +45,8 @@ def get_config(config_file=None):
     if isinstance(config_file, (str, bytes, os.PathLike)):
         with open(config_file) as fp:
             return json.load(fp)
-    # A caller that hands us an open handle usually hands us the same one to
-    # several of the functions below; rewind so the second read is not empty.
+    # One handle is often passed to several of the functions below; rewind so
+    # the second read is not empty.
     config_file.seek(0)
     return json.load(config_file)
 
@@ -110,8 +101,8 @@ def get_env_config(env_name=None, config_file=None):
     :returns: a `tuple` of (env_name, env_config).
 
     .. note::
-       The name, signature and return shape are part of an external contract:
-       four ``casterisk-realtime`` modules import this and unpack the pair.
+       Name, signature and return shape are an external contract: consumers
+       import this and unpack the pair.
     """
     config = get_config(config_file=config_file)
     if env_name is None and len(config["envs"]) == 1:
@@ -133,8 +124,7 @@ def get_env_config(env_name=None, config_file=None):
 def get_topology_from_file(topology_file):
     """Import a topology definition module and return its `Topology` subclass."""
     topology_dir, mod_name = os.path.split(topology_file)
-    # Remove .py extension before trying to import
-    mod_name = mod_name[:-3]
+    mod_name = mod_name[:-3]  # strip .py
     sys.path.append(os.path.join(topology_dir, "..", "src"))
     sys.path.append(topology_dir)
     mod = importlib.import_module(mod_name)
@@ -150,15 +140,9 @@ def get_topology_from_file(topology_file):
 def set_topology_serializer(env_config, config, topology_class):
     """Validate the configured serializer. JSON is the only one supported.
 
-    Upstream prepended ``-s <serializer> `` to every component's script so that
-    ``streamparse_run`` would pick a serializer module. That flag no longer
-    exists: ``pystorm-a8c-run`` speaks JSON and nothing else, so the prefix
-    would make argparse exit non-zero on every worker. Since ``config.json``
-    files in the wild still carry ``"serializer": "json"``, the key is accepted
-    and the script is left untouched.
-
-    Anything other than ``json`` is refused rather than downgraded -- quietly
-    swapping the protocol would mis-decode every tuple on the wire.
+    Accepted rather than rejected outright because config.json files in the
+    wild carry ``"serializer": "json"``. Any other value is refused rather
+    than downgraded: swapping the protocol would mis-decode every tuple.
     """
     serializer = env_config.get("serializer", config.get("serializer", None))
     if serializer is not None and serializer != "json":
@@ -221,12 +205,9 @@ def get_storm_workers(env_config):
     Uses ``workers`` from config.json when present; otherwise asks Nimbus.
 
     .. note::
-       The name and signature are part of an external contract:
-       ``casterisk-realtime``'s ``conftest.py`` monkeypatches this. Do not add
-       parameters -- a stand-in written against this one-argument shape raises
-       TypeError the moment a caller passes anything else. The Nimbus client
-       below gets its own timeout from :data:`DEFAULT_NIMBUS_TIMEOUT_MS`, so
-       this lookup cannot hang without one.
+       Name and signature are an external contract: consumers monkeypatch this
+       in their own test suites. Do not add parameters -- a one-argument
+       stand-in would raise TypeError as soon as a caller passed anything else.
     """
     workers = env_config.get("workers")
     if workers:
@@ -238,14 +219,9 @@ def get_storm_workers(env_config):
 def nimbus_storm_version(nimbus_client):
     """Return Nimbus's Storm version as a comparable tuple.
 
-    Returning a tuple rather than a ``pkg_resources`` version object is what
-    lets ``setuptools`` stay out of the runtime dependency set.
-
-    A failure here propagates. It used to be swallowed into ``(0, 0, 0)`` for
-    the sake of Storm < 0.10.0, which has no ``getVersion`` and which this
-    package does not support -- so in practice the only things it caught were
-    timeouts, auth failures and wrong hosts, reported as "ancient Storm" and
-    silently skipping the topology-name check downstream.
+    A tuple rather than a version object, so ``setuptools`` stays out of the
+    runtime dependencies. RPC failures propagate: a timeout or a wrong host is
+    not an old Storm.
     """
     parts = []
     for chunk in str(nimbus_client.getVersion()).split("."):

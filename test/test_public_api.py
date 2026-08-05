@@ -38,7 +38,7 @@ def test_batching_bolt_is_exported_even_though_casterisk_never_uses_it():
 
     Every other export is there because casterisk imports it. `BatchingBolt`
     is kept and exported as a deliberate exception (Task 4): it is the
-    tick-driven batching option, and upstream `streamparse` exported it from
+    tick-driven batching option, and consumers may import it from
     its root too, so exporting it here keeps the compat shim a straight alias.
     """
     import pystorm_a8c

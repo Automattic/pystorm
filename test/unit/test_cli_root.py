@@ -69,7 +69,7 @@ def test_the_console_script_is_installed():
 
 
 def test_no_lein_root_guard_anywhere():
-    """sparse refused to run as root because of lein; there is no lein now."""
+    """There is no JVM build step, so root is unremarkable."""
     import pathlib
 
     root = pathlib.Path(__file__).resolve().parents[2] / "pystorm_a8c"
