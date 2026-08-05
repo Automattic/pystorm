@@ -262,14 +262,18 @@ def resolve_options(cli_options, env_config, topology_class, venv_blobstore_key=
     if storm_options.get("topology.debug", False):
         storm_options["pystorm.log.level"] = "debug"
 
-    # Default the worker and acker counts to the size of the cluster. The
-    # worker list itself is not put in the conf: nothing reads it -- it was a
-    # streamparse key for an SSH fan-out that no longer exists.
-    num_storm_workers = len(get_storm_workers(env_config))
-    if storm_options.get("topology.acker.executors") is None:
-        storm_options["topology.acker.executors"] = num_storm_workers
+    # Default the worker count to the size of the cluster -- one JVM per
+    # supervisor. Storm's own default is 1, which would run an entire topology
+    # in a single process on a single host.
+    #
+    # `topology.acker.executors` is deliberately left alone: Storm's default is
+    # null, and null already means "equal to the number of workers configured
+    # for this topology", so setting it here only restated what Storm does.
+    #
+    # The worker *list* is not put in the conf either: nothing reads it -- it
+    # was a streamparse key for an SSH fan-out that no longer exists.
     if storm_options.get("topology.workers") is None:
-        storm_options["topology.workers"] = num_storm_workers
+        storm_options["topology.workers"] = len(get_storm_workers(env_config))
 
     return storm_options
 

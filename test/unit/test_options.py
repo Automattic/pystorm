@@ -103,16 +103,23 @@ def test_topology_options_beat_env_options():
     assert options["topology.max.spout.pending"] == 2
 
 
-def test_workers_and_ackers_default_to_the_worker_count():
+def test_workers_default_to_the_size_of_the_cluster():
+    """Storm's own default is 1, i.e. the whole topology in one JVM."""
     options = resolve(env_config={"workers": ["w1", "w2", "w3"]})
     assert options["topology.workers"] == 3
-    assert options["topology.acker.executors"] == 3
+
+
+def test_the_acker_count_is_left_to_storm():
+    """Storm reads a null topology.acker.executors as "same as the worker
+    count", so setting it here only restated the default."""
+    options = resolve(env_config={"workers": ["w1", "w2", "w3"]})
+    assert "topology.acker.executors" not in options
 
 
 def test_the_worker_list_is_not_shipped_to_nimbus():
     """It was a streamparse key for an SSH fan-out; nothing reads it now.
 
-    Only the count survives, as the default for workers and ackers.
+    Only the count survives, as the default for topology.workers.
     """
     options = resolve(env_config={"workers": ["w1", "w2", "w3"]})
     assert "storm.workers.list" not in options
@@ -259,4 +266,8 @@ def test_sudo_user_is_gone():
 def test_the_worker_count_comes_from_the_configured_list():
     options = resolve(env_config={"workers": ["only-one"]})
     assert options["topology.workers"] == 1
-    assert options["topology.acker.executors"] == 1
+
+
+def test_an_explicit_acker_count_still_passes_through():
+    options = resolve(cli_options={"topology.acker.executors": 8})
+    assert options["topology.acker.executors"] == 8
