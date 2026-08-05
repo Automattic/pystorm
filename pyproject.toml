@@ -1,0 +1,34 @@
+[build-system]
+requires = ["uv_build>=0.9,<0.12"]
+build-backend = "uv_build"
+
+[project]
+name = "pystorm-a8c"
+version = "1.0.0"
+description = "Slim Apache Storm multi-lang runtime, topology DSL, and Nimbus submit client for Parse.ly"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Parse.ly / Automattic" }]
+dependencies = ["thriftpy2>=0.4.11"]
+
+[project.optional-dependencies]
+# tomli only for 3.9/3.10; tomllib is stdlib from 3.11. Test-only -- this does
+# not touch the one-runtime-dependency rule.
+test = ["pytest>=7", "pytest-timeout>=2", "tomli>=2; python_version < '3.11'"]
+lint = ["black>=24"]
+
+[project.scripts]
+pystorm_a8c_run = "pystorm_a8c.run:main"
+pystorm-a8c = "pystorm_a8c.cli:main"
+
+[tool.uv.build-backend]
+module-root = ""
+# TODO(Task 12): add "streamparse" here when the deprecated compat shim is
+# created. uv_build requires every listed module to exist on disk, so it cannot
+# be listed before then. Task 13 Step 3 asserts the shim actually ships.
+module-name = ["pystorm_a8c"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+addopts = "-vv --timeout=30"

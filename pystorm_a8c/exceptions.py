@@ -1,10 +1,6 @@
-""" Pystorm-specific exceptions """
-
-
 class StormWentAwayError(Exception):
-    """Raised when the connection between the component and Storm terminates.
-    """
+    """Raised when the connection to Storm's stdin/stdout is closed."""
 
     def __init__(self):
         message = "Got EOF while reading from Storm"
-        super(StormWentAwayError, self).__init__(message)
+        super().__init__(message)

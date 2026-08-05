@@ -13,3 +13,7 @@ _resources/
 *.sw*
 .tox/
 .python-version
+.venv/
+.pystorm/
+.pytest_cache/
+__pycache__/

@@ -1,20 +1,22 @@
-"""
-pystorm is a production-tested Storm multi-lang implementation for Python
+from importlib.metadata import version as _dist_version
 
-It is mostly intended to be used by other libraries (e.g., streamparse).
-"""
+from pystorm_a8c.exceptions import StormWentAwayError
 
-from .component import Component, Tuple
-from .bolt import BatchingBolt, Bolt, TicklessBatchingBolt
-from .spout import ReliableSpout, Spout
-from .version import __version__, VERSION
+# The version is declared once, in pyproject.toml, and read back here from the
+# installed distribution metadata. The uv_build backend requires a literal
+# `version` in pyproject.toml -- it rejects `dynamic = ["version"]` -- so this
+# direction is the only one that keeps a single source of truth.
+#
+# Version scheme: MAJOR.MINOR.PATCH, where MAJOR is the Apache Storm major
+# version this package supports (1.x <-> Storm 1.x). Because MAJOR is spoken
+# for by Storm, breaking changes to this package's own Python API go in the
+# MINOR position. See README.md "Versioning".
+#
+# This raises PackageNotFoundError if pystorm_a8c is imported from a source
+# checkout that was never installed. That is intentional: every supported
+# workflow (`uv run`, `uv sync`, the deployed blobstore venv) installs the
+# package, and a loud failure beats silently reporting a placeholder version
+# into a worker log.
+__version__ = _dist_version("pystorm-a8c")
 
-__all__ = [
-    "BatchingBolt",
-    "Bolt",
-    "Component",
-    "ReliableSpout",
-    "Spout",
-    "TicklessBatchingBolt",
-    "Tuple",
-]
+__all__ = ["StormWentAwayError", "__version__"]
