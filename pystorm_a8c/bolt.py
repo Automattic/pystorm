@@ -550,6 +550,12 @@ class TicklessBatchingBolt(BatchingBolt):
                 # TypeError about unpacking None would bury the real cause.
                 return
             exc_type, exc_value, exc_tb = self.exc_info
+            # Consume it. The exception is being delivered now, and leaving it
+            # armed means the *next* SIGUSR1 -- a stray one aimed at a sibling
+            # bolt, or one arriving after a bolt with exit_on_exception=False
+            # already recovered -- re-raises this stale exception at whatever
+            # point the main thread has reached by then.
+            self.exc_info = None
             raise exc_value.with_traceback(exc_tb)
 
     def _run(self):

@@ -41,15 +41,28 @@ def park_batcher_threads():
     `TicklessBatchingBolt` starts a daemon thread in `__init__` and has no stop
     hook -- in production the thread lives as long as the worker process, which
     is the point. In tests it means an `ExplodingBolt` keeps raising every
-    `secs_between_batches` for the rest of the session and, once the test's
-    `patch("os.kill")` is undone, fires a real SIGUSR1 into whatever pytest is
-    doing at the time. Park each thread on a long sleep instead.
+    `secs_between_batches` for the rest of the session. Park each thread on a
+    long sleep instead.
+
+    os.kill stays patched across the test *and* this teardown, which is the
+    part that matters. A test that patches os.kill itself only holds it until
+    its own `with` block exits, and the batcher keeps firing in the gap before
+    the fixture runs. In that gap a real SIGUSR1 reaches a process whose
+    handler is still a bolt method with `exc_info` armed, and "batch blew up"
+    is re-raised wherever the main thread happens to be -- which is how this
+    file turned CI red from inside pytest's terminal writer, on whichever
+    Python version lost the race that run.
     """
-    yield
-    while _BUILT:
-        bolt = _BUILT.pop()
-        bolt.secs_between_batches = 3600
-        bolt.process_batches = lambda: None
+    with patch("os.kill"):
+        yield
+        while _BUILT:
+            bolt = _BUILT.pop()
+            bolt.secs_between_batches = 3600
+            bolt.process_batches = lambda: None
+            # process_batches runs under this lock, so taking it waits out an
+            # iteration already in flight before os.kill is unpatched.
+            with bolt._batch_lock:
+                bolt.exc_info = None
 
 
 def build(cls):
