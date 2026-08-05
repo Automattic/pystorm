@@ -17,6 +17,27 @@ def make_serializer(input_bytes=b""):
     return JSONSerializer(inp, out, threading.RLock(), threading.RLock())
 
 
+def test_wraps_stdout_is_recorded_before_the_stream_is_wrapped(monkeypatch):
+    """_wrap_stream returns a NEW TextIOWrapper, so `output_stream is
+    sys.stdout` is never true afterwards. Component relies on this flag to
+    decide whether to redirect sys.stdout away from Storm's pipe.
+
+    sys.stdout is patched rather than used directly: wrapping the real one
+    orphans a TextIOWrapper that closes pytest's captured stdout when it is
+    collected (see make_serializer above).
+    """
+    import sys
+
+    fake_stdout = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", fake_stdout)
+
+    s = JSONSerializer(io.BytesIO(), fake_stdout, threading.RLock(), threading.RLock())
+
+    assert s.wraps_stdout is True
+    assert s.output_stream is not sys.stdout
+    assert make_serializer().wraps_stdout is False
+
+
 def test_read_message_parses_json_terminated_by_end():
     s = make_serializer(b'{"command": "next"}\nend\n')
     assert s.read_message() == {"command": "next"}

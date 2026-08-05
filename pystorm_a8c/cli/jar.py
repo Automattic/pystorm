@@ -27,11 +27,29 @@ def _collect(src_dir):
     ``followlinks=True`` is required, not stylistic: casterisk-realtime's
     ``src/casterisk`` is a symlink to ``../casterisk``, and os.walk skips
     symlinked directories by default -- which yields an empty JAR.
+
+    Following links means os.walk has no loop protection of its own, so
+    directories are tracked by (st_dev, st_ino) and revisits are pruned.
+    Without that, a link pointing back up into the tree walks forever and the
+    build dies on path length rather than naming the cycle.
     """
     src_dir = pathlib.Path(src_dir)
     if not src_dir.is_dir():
         raise FileNotFoundError(f"source directory does not exist: {src_dir}")
+    seen_dirs = set()
     for root, dirs, files in os.walk(src_dir, followlinks=True):
+        try:
+            stat = os.stat(root)
+            key = (stat.st_dev, stat.st_ino)
+        except OSError:
+            key = None
+        if key is not None:
+            if key in seen_dirs:
+                # Already packaged under an earlier path: descending again
+                # would duplicate entries, or never terminate on a cycle.
+                dirs[:] = []
+                continue
+            seen_dirs.add(key)
         dirs[:] = sorted(d for d in dirs if d not in EXCLUDED_DIRS)
         rel_root = pathlib.PurePath(root).relative_to(src_dir)
         for name in sorted(files):

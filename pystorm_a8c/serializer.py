@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import sys
 
 from pystorm_a8c.exceptions import StormWentAwayError
 
@@ -15,6 +16,12 @@ class JSONSerializer:
     """
 
     def __init__(self, input_stream, output_stream, reader_lock, writer_lock):
+        #: Whether the stream we were handed is the process's ``sys.stdout``,
+        #: i.e. whether a stray ``print()`` would land in Storm's pipe.
+        #: Recorded here because ``_wrap_stream`` returns a *new* TextIOWrapper:
+        #: comparing ``self.output_stream`` against ``sys.stdout`` later is
+        #: always False, which silently disabled the component's redirect.
+        self.wraps_stdout = output_stream is sys.stdout
         self.input_stream = self._wrap_stream(input_stream)
         self.output_stream = self._wrap_stream(output_stream)
         self._reader_lock = reader_lock

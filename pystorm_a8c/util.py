@@ -25,6 +25,13 @@ from pystorm_a8c.storm import Nimbus
 DEFAULT_NIMBUS_PORT = 6627
 NIMBUS_ENV_VAR = "PYSTORM_A8C_NIMBUS"
 
+#: Milliseconds to wait on a Nimbus socket when no caller supplies a value.
+#: Must not be left as `None`: thriftpy2 maps a falsy timeout to
+#: `socket_timeout=None`, i.e. a blocking socket, so a Nimbus that accepts the
+#: connection and then hangs would wedge the submit forever. Matches the
+#: default of `pystorm-a8c submit --timeout`.
+DEFAULT_NIMBUS_TIMEOUT_MS = 7000
+
 log = logging.getLogger(__name__)
 
 
@@ -232,12 +239,16 @@ def get_nimbus_client(env_config=None, host=None, port=None, timeout=None):
 
     :param env_config: The project's parsed env config. Not consulted when
                        ``host`` is given.
-    :param timeout: milliseconds to wait for a response from Nimbus.
+    :param timeout: milliseconds to wait for a response from Nimbus. `None`
+                    means :data:`DEFAULT_NIMBUS_TIMEOUT_MS`, never "no
+                    timeout" -- see that constant.
 
     :returns: a thriftpy2 RPC client for the Nimbus service.
     """
     if host is None:
         host, port = get_nimbus_host_port(env_config)
+    if timeout is None:
+        timeout = DEFAULT_NIMBUS_TIMEOUT_MS
     return make_client(
         Nimbus,
         host=host,
@@ -248,22 +259,26 @@ def get_nimbus_client(env_config=None, host=None, port=None, timeout=None):
     )
 
 
-def get_storm_workers(env_config):
+def get_storm_workers(env_config, timeout=None):
     """Return the list of supervisor hosts.
 
     Uses ``workers`` from config.json when present; otherwise asks Nimbus and
     memoizes the answer per (host, port).
 
+    :param timeout: milliseconds to wait for Nimbus, so this lookup honours
+                    ``submit --timeout`` rather than using its own.
+
     .. note::
        The name and signature are part of an external contract:
-       ``casterisk-realtime``'s ``conftest.py`` monkeypatches this.
+       ``casterisk-realtime``'s ``conftest.py`` monkeypatches this. ``timeout``
+       is keyword-with-default so existing single-argument callers still work.
     """
     workers = env_config.get("workers")
     if workers:
         return workers
     host, port = get_nimbus_host_port(env_config)
     if (host, port) not in _storm_workers:
-        client = get_nimbus_client(env_config, host=host, port=port)
+        client = get_nimbus_client(env_config, host=host, port=port, timeout=timeout)
         cluster_info = client.getClusterInfo()
         _storm_workers[(host, port)] = [s.host for s in cluster_info.supervisors]
     return _storm_workers[(host, port)]

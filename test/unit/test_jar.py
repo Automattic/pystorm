@@ -36,6 +36,18 @@ def test_jar_follows_the_src_symlink(project):
     assert "resources/casterisk/bolts/indexer.py" in names
 
 
+def test_a_symlink_cycle_terminates_instead_of_recursing(project):
+    """followlinks=True has no loop protection of its own."""
+    (project / "casterisk" / "loop").symlink_to(project / "src", True)
+
+    out = build_jar(src_dir=project / "src", output_path=project / "topology.jar")
+
+    with zipfile.ZipFile(out) as zf:
+        names = zf.namelist()
+    assert "resources/casterisk/bolts/indexer.py" in names
+    assert len(names) == len(set(names)), "cycle produced duplicate entries"
+
+
 def test_jar_is_never_empty(project):
     """An empty JAR submits fine and fails at worker start -- fail here instead."""
     out = build_jar(src_dir=project / "src", output_path=project / "topology.jar")

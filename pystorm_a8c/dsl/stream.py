@@ -130,7 +130,7 @@ class Grouping:
     def custom_serialized(cls, java_serialized):
         """Tuples will be assigned to tasks by the given Java serialized class."""
         if not isinstance(java_serialized, bytes):
-            return TypeError(
+            raise TypeError(
                 "Argument to custom_serialized must be a "
                 "serialized Java class as bytes.  Given: {!r}".format(java_serialized)
             )

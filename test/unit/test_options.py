@@ -117,15 +117,32 @@ def test_a_comma_separated_worker_list_is_split():
 
 
 def test_log_config_becomes_pystorm_log_options():
+    options = resolve(env_config={"workers": ["w1"], "log": {"level": "INFO"}})
+    assert options["pystorm.log.level"] == "info"
+
+
+def test_file_logging_keys_are_not_forwarded_to_nimbus():
+    """The worker's RotatingFileHandler is gone; don't advertise a path.
+
+    Forwarding these made submit print "Routing Python logging to ..." for a
+    file no worker ever creates.
+    """
     options = resolve(
         env_config={
             "workers": ["w1"],
-            "log": {"level": "INFO", "path": "/var/log/storm", "max_bytes": 100},
+            "log": {
+                "level": "INFO",
+                "path": "/var/log/storm",
+                "file": "x.log",
+                "max_bytes": 100,
+                "backup_count": 3,
+            },
         }
     )
-    assert options["pystorm.log.level"] == "info"
-    assert options["pystorm.log.path"] == "/var/log/storm"
-    assert options["pystorm.log.max_bytes"] == 100
+    assert "pystorm.log.path" not in options
+    assert "pystorm.log.file" not in options
+    assert "pystorm.log.max_bytes" not in options
+    assert "pystorm.log.backup_count" not in options
 
 
 def test_topology_debug_forces_debug_logging():

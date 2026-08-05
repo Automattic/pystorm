@@ -86,7 +86,12 @@ class _StoreDictAction(argparse.Action):
 
 
 def resolve_options(
-    cli_options, env_config, topology_class, topology_name, local_only=False
+    cli_options,
+    env_config,
+    topology_class,
+    topology_name,
+    local_only=False,
+    timeout=None,
 ):
     """Resolve potentially conflicting Storm options from three sources:
 
@@ -94,6 +99,9 @@ def resolve_options(
 
     :param local_only: Whether or not we should talk to Nimbus to get Storm
                        workers and other info.
+    :param timeout: milliseconds to wait for Nimbus on the worker-list lookup.
+                    Threaded through so that lookup honours ``--timeout``; it
+                    runs before the submit's own client is built.
     """
     storm_options = {}
 
@@ -110,18 +118,21 @@ def resolve_options(
         # read by any pystorm-a8c code.
         storm_options["topology.python.path"] = python_path
 
-    # Set logging options based on environment config
+    # Set logging options based on environment config.
+    #
+    # Only the level is forwarded. `path`/`file`/`max_bytes`/`backup_count`
+    # drove a RotatingFileHandler on the worker; that handler is gone --
+    # Component always logs through StormHandler now -- so passing those keys
+    # to Nimbus would advertise a destination no worker ever writes to.
     log_config = env_config.get("log", {})
     log_path = log_config.get("path") or env_config.get("log_path")
     log_file = log_config.get("file") or env_config.get("log_file")
-    if log_path:
-        storm_options["pystorm.log.path"] = log_path
-    if log_file:
-        storm_options["pystorm.log.file"] = log_file
-    if isinstance(log_config.get("max_bytes"), int):
-        storm_options["pystorm.log.max_bytes"] = log_config["max_bytes"]
-    if isinstance(log_config.get("backup_count"), int):
-        storm_options["pystorm.log.backup_count"] = log_config["backup_count"]
+    if log_path or log_file:
+        warn(
+            "log path/file settings are no longer supported and are being "
+            "ignored: worker logging goes to Storm's own logs via "
+            "StormHandler. Remove them from config.json."
+        )
     if isinstance(log_config.get("level"), str):
         storm_options["pystorm.log.level"] = log_config["level"].lower()
 
@@ -143,7 +154,9 @@ def resolve_options(
     # If ackers and executors still aren't set, use number of worker nodes
     if not local_only:
         if not storm_options.get("storm.workers.list"):
-            storm_options["storm.workers.list"] = get_storm_workers(env_config)
+            storm_options["storm.workers.list"] = get_storm_workers(
+                env_config, timeout=timeout
+            )
         elif isinstance(storm_options["storm.workers.list"], str):
             storm_options["storm.workers.list"] = storm_options[
                 "storm.workers.list"
@@ -298,10 +311,6 @@ def _submit_topology(
     options=None,
     active=True,
 ):
-    if options.get("pystorm.log.path"):
-        print(f"Routing Python logging to {options['pystorm.log.path']}.")
-        sys.stdout.flush()
-
     set_topology_serializer(env_config, config, topology_class)
 
     # Check if topology name is okay on Storm versions that support that
@@ -352,7 +361,9 @@ def submit_topology(
         local_jar_path = None
 
     # Handle option conflicts
-    options = resolve_options(options, env_config, topology_class, override_name)
+    options = resolve_options(
+        options, env_config, topology_class, override_name, timeout=timeout
+    )
 
     check_install_virtualenv(options)
 

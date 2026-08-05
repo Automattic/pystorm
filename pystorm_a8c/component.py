@@ -257,8 +257,10 @@ class Component:
         self.logger.setLevel(log_level)
         logging.getLogger("pystorm").setLevel(log_level)
         # Redirect stdout to ensure that print statements/functions
-        # won't disrupt the multilang protocol
-        if self.serializer.output_stream == sys.stdout:
+        # won't disrupt the multilang protocol. The serializer records this at
+        # construction time: its `output_stream` is a wrapper around
+        # sys.stdout.buffer, so comparing it to sys.stdout never matches.
+        if self.serializer.wraps_stdout:
             sys.stdout = LogStream(logging.getLogger("pystorm.stdout"))
 
     def read_message(self):
