@@ -259,26 +259,26 @@ def get_nimbus_client(env_config=None, host=None, port=None, timeout=None):
     )
 
 
-def get_storm_workers(env_config, timeout=None):
+def get_storm_workers(env_config):
     """Return the list of supervisor hosts.
 
     Uses ``workers`` from config.json when present; otherwise asks Nimbus and
     memoizes the answer per (host, port).
 
-    :param timeout: milliseconds to wait for Nimbus, so this lookup honours
-                    ``submit --timeout`` rather than using its own.
-
     .. note::
        The name and signature are part of an external contract:
-       ``casterisk-realtime``'s ``conftest.py`` monkeypatches this. ``timeout``
-       is keyword-with-default so existing single-argument callers still work.
+       ``casterisk-realtime``'s ``conftest.py`` monkeypatches this. Do not add
+       parameters -- a stand-in written against this one-argument shape raises
+       TypeError the moment a caller passes anything else. The Nimbus client
+       below gets its own timeout from :data:`DEFAULT_NIMBUS_TIMEOUT_MS`, so
+       this lookup cannot hang without one.
     """
     workers = env_config.get("workers")
     if workers:
         return workers
     host, port = get_nimbus_host_port(env_config)
     if (host, port) not in _storm_workers:
-        client = get_nimbus_client(env_config, host=host, port=port, timeout=timeout)
+        client = get_nimbus_client(env_config, host=host, port=port)
         cluster_info = client.getClusterInfo()
         _storm_workers[(host, port)] = [s.host for s in cluster_info.supervisors]
     return _storm_workers[(host, port)]

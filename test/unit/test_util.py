@@ -95,6 +95,36 @@ def test_use_ssh_for_nimbus_absent_does_not_warn(caplog):
     assert caplog.records == []
 
 
+def test_get_storm_workers_takes_exactly_one_argument():
+    """casterisk-realtime's conftest.py replaces this function.
+
+    A stand-in written against the documented one-argument shape raises
+    TypeError the moment we call it with anything else, and that only shows up
+    in the consumer's test suite.
+    """
+    import inspect
+
+    from pystorm_a8c.util import get_storm_workers
+
+    assert list(inspect.signature(get_storm_workers).parameters) == ["env_config"]
+
+
+def test_a_one_argument_stand_in_survives_a_submit(monkeypatch):
+    """The call site must not pass anything the documented shape rejects."""
+    from types import SimpleNamespace
+
+    import pystorm_a8c.util as util
+    from pystorm_a8c.cli import submit
+
+    monkeypatch.setattr(submit, "get_storm_workers", lambda env_config: ["w1", "w2"])
+    monkeypatch.setattr(util, "get_storm_workers", lambda env_config: ["w1", "w2"])
+
+    options = submit.resolve_options(None, {}, SimpleNamespace(config={}), "topo")
+
+    assert options["storm.workers.list"] == ["w1", "w2"]
+    assert options["topology.workers"] == 2
+
+
 def test_get_storm_workers_prefers_configured_list():
     from pystorm_a8c.util import get_storm_workers
 

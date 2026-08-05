@@ -86,12 +86,7 @@ class _StoreDictAction(argparse.Action):
 
 
 def resolve_options(
-    cli_options,
-    env_config,
-    topology_class,
-    topology_name,
-    local_only=False,
-    timeout=None,
+    cli_options, env_config, topology_class, topology_name, local_only=False
 ):
     """Resolve potentially conflicting Storm options from three sources:
 
@@ -99,9 +94,14 @@ def resolve_options(
 
     :param local_only: Whether or not we should talk to Nimbus to get Storm
                        workers and other info.
-    :param timeout: milliseconds to wait for Nimbus on the worker-list lookup.
-                    Threaded through so that lookup honours ``--timeout``; it
-                    runs before the submit's own client is built.
+
+    .. note::
+       The worker-list lookup below runs before the submit's own Nimbus client
+       exists, so it does not see ``--timeout``. It uses
+       :data:`~pystorm_a8c.util.DEFAULT_NIMBUS_TIMEOUT_MS` instead, which is
+       the same value that flag defaults to. Threading the CLI value down to
+       ``get_storm_workers`` would mean changing its signature, and
+       casterisk-realtime's conftest.py replaces that function.
     """
     storm_options = {}
 
@@ -154,9 +154,7 @@ def resolve_options(
     # If ackers and executors still aren't set, use number of worker nodes
     if not local_only:
         if not storm_options.get("storm.workers.list"):
-            storm_options["storm.workers.list"] = get_storm_workers(
-                env_config, timeout=timeout
-            )
+            storm_options["storm.workers.list"] = get_storm_workers(env_config)
         elif isinstance(storm_options["storm.workers.list"], str):
             storm_options["storm.workers.list"] = storm_options[
                 "storm.workers.list"
@@ -361,9 +359,7 @@ def submit_topology(
         local_jar_path = None
 
     # Handle option conflicts
-    options = resolve_options(
-        options, env_config, topology_class, override_name, timeout=timeout
-    )
+    options = resolve_options(options, env_config, topology_class, override_name)
 
     check_install_virtualenv(options)
 
