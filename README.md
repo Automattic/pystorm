@@ -11,7 +11,9 @@ topology archive with the standard library.
 
 Target: **Apache Storm 1.2.x**. One runtime dependency: `thriftpy2`.
 
-See `doc/plans/2026-08-05-pystorm-a8c.md` for the full design and rationale.
+See the [implementation plan](https://gist.github.com/xyu/a0962edd5c79365bbb2dc42699b8d5e5)
+for the full design and rationale. It lives outside the repo because it is a
+record of how this package was built, not documentation of how to use it.
 
 ## Install
 
