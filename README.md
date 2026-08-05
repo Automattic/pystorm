@@ -261,6 +261,8 @@ package's own API ship in the minor position.** Read the changelog before a
 minor bump, not just before a major one. This is the one thing about our
 versioning that will surprise you.
 
+Cutting a release is written up in [doc/RELEASING.md](doc/RELEASING.md).
+
 There is no epoch and no local version label. The distribution name
 `pystorm-a8c` already distinguishes this package from upstream `pystorm`, so
 neither would order or identify anything the name doesn't. The `+a8c.N`
