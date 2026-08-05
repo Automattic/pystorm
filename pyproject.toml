@@ -24,10 +24,10 @@ pystorm-a8c = "pystorm_a8c.cli:main"
 
 [tool.uv.build-backend]
 module-root = ""
-# TODO(Task 12): add "streamparse" here when the deprecated compat shim is
-# created. uv_build requires every listed module to exist on disk, so it cannot
-# be listed before then. Task 13 Step 3 asserts the shim actually ships.
-module-name = ["pystorm_a8c"]
+# "streamparse" is the deprecated compatibility shim. It ships in the wheel so
+# that consumers migrating off the old import paths keep working; see the
+# removal checklist in streamparse/__init__.py.
+module-name = ["pystorm_a8c", "streamparse"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]

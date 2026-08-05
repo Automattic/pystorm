@@ -12,10 +12,10 @@ test-all:
 	done
 
 lint:
-	uv run --extra lint black --check pystorm_a8c test
+	uv run --extra lint black --check pystorm_a8c streamparse test
 
 fmt:
-	uv run --extra lint black pystorm_a8c test
+	uv run --extra lint black pystorm_a8c streamparse test
 
 dist: clean
 	uv build

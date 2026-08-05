@@ -344,9 +344,7 @@ def test_a_non_json_serializer_is_refused_not_ignored():
     from pystorm_a8c.util import set_topology_serializer
 
     with pytest.raises(SystemExit):
-        set_topology_serializer(
-            {"serializer": "msgpack"}, {}, make_topology_class()
-        )
+        set_topology_serializer({"serializer": "msgpack"}, {}, make_topology_class())
 
 
 def test_env_serializer_overrides_the_project_serializer():

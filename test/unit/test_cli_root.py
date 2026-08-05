@@ -62,9 +62,7 @@ def test_version_flag_reports_the_package_version(capsys):
 
 def test_the_console_script_is_installed():
     """The name the Makefile and deploy script will call must be on PATH."""
-    result = subprocess.run(
-        ["pystorm-a8c", "--help"], capture_output=True, text=True
-    )
+    result = subprocess.run(["pystorm-a8c", "--help"], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     assert "submit" in result.stdout
     assert "jar" in result.stdout
