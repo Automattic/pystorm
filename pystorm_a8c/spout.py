@@ -2,11 +2,9 @@
 Base Spout classes.
 """
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 from collections import Counter
 
-from .component import Component
+from pystorm_a8c.component import Component
 
 
 class Spout(Component):
@@ -73,12 +71,32 @@ class Spout(Component):
                   that when specifying direct_task, this will be equal to
                   ``[direct_task]``.
         """
-        return super(Spout, self).emit(
+        return super().emit(
             tup,
             tup_id=tup_id,
             stream=stream,
             direct_task=direct_task,
             need_task_ids=need_task_ids,
+        )
+
+    @classmethod
+    def spec(cls, name=None, par=None, config=None, outputs=None):
+        """Create a topology DSL spec for this spout.
+
+        Merged in from streamparse's Spout layer so the two-level component
+        hierarchy collapses into one class. Unlike :meth:`Bolt.spec` there is
+        no ``inputs`` parameter -- spouts are sources.
+        """
+        from pystorm_a8c.dsl.spout import ShellSpoutSpec
+
+        return ShellSpoutSpec(
+            cls,
+            command="pystorm_a8c_run",
+            script=f"-m {cls.__module__}",
+            name=name,
+            par=par,
+            config=config,
+            outputs=outputs,
         )
 
     def activate(self):
@@ -125,12 +143,33 @@ class ReliableSpout(Spout):
 
     For more information on spouts, consult Storm's
     `Concepts documentation <http://storm.apache.org/documentation/Concepts.html>`_.
+
+    :ivar unacked_tuples: ``dict`` mapping tuple ID to the emit arguments needed
+        to replay it, populated by :meth:`emit` and drained by :meth:`ack`.
+
+        **This mapping is unbounded by design.** It holds exactly the tuples
+        Storm has not yet resolved, so its size is governed by the topology's
+        in-flight window and ``topology.message.timeout.secs`` -- not by
+        anything this class should cap. Evicting entries to bound it would
+        silently break replay: :meth:`fail` would find no saved args and log
+        "Received fail for unknown tuple ID" instead of re-emitting, turning a
+        recoverable failure into permanent data loss.
+
+        If it grows without bound in production, the cause is upstream (acks
+        not arriving, or a spout emitting faster than the topology drains), and
+        that is what needs fixing. ``casterisk/spouts/common/base.py`` gauges
+        ``len(self.unacked_tuples)`` to Graphite precisely so that condition is
+        visible; both this attribute name and ``max_fails`` are part of that
+        external contract and must not be renamed.
+
+    :ivar failed_tuples: ``Counter`` of per-tuple-ID failure counts, compared
+        against ``max_fails`` to decide between replaying and giving up.
     """
 
     max_fails = 3
 
     def __init__(self, *args, **kwargs):
-        super(ReliableSpout, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.failed_tuples = Counter()
         self.unacked_tuples = {}
 
@@ -197,7 +236,7 @@ class ReliableSpout(Spout):
             )
         args = (tup, stream, direct_task, need_task_ids)
         self.unacked_tuples[tup_id] = args
-        return super(ReliableSpout, self).emit(
+        return super().emit(
             tup,
             tup_id=tup_id,
             stream=stream,

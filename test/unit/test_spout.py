@@ -2,18 +2,15 @@
 Tests for Spout class
 """
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import logging
 import unittest
 from io import BytesIO
+from unittest.mock import patch
 
-try:
-    from unittest.mock import patch
-except ImportError:
-    from mock import patch
+import pytest
 
-from pystorm import ReliableSpout, Spout, Tuple
+from pystorm_a8c.component import Tuple
+from pystorm_a8c.spout import ReliableSpout, Spout
 
 
 class SpoutTests(unittest.TestCase):
@@ -241,6 +238,44 @@ class ReliableSpoutTests(unittest.TestCase):
         self.spout.fail("foo")
         self.assertEqual(emit_mock.call_count, 0)
         ack_mock.assert_called_with(self.spout, "foo")
+
+
+def build_reliable_spout():
+    # BytesIO, not StringIO: _wrap_stream puts a TextIOWrapper around whatever
+    # it is given, and a TextIOWrapper writes bytes -- which StringIO rejects.
+    spout = ReliableSpout(input_stream=BytesIO(), output_stream=BytesIO())
+    # `logger` is None until _setup_component runs against a real handshake,
+    # and the give-up path in fail() logs. Same assignment the seeded
+    # TestCase.setUp methods make.
+    spout.logger = logging.getLogger(__name__)
+    return spout
+
+
+def test_unacked_tuples_attribute_name_is_stable():
+    # casterisk/spouts/common/base.py gauges len(self.unacked_tuples).
+    s = build_reliable_spout()
+    assert isinstance(s.unacked_tuples, dict)
+
+
+def test_max_fails_attribute_name_is_stable():
+    # casterisk/spouts/common/kafka.py sets self.max_fails directly.
+    assert ReliableSpout.max_fails == 3
+
+
+def test_reliable_emit_requires_tup_id():
+    s = build_reliable_spout()
+    with pytest.raises(ValueError):
+        s.emit([1, 2])
+
+
+def test_fail_above_limit_gives_up_and_cleans_state():
+    s = build_reliable_spout()
+    with patch.object(s, "send_message"):
+        s.emit([1], tup_id="t1")
+        for _ in range(ReliableSpout.max_fails + 1):
+            s.fail("t1")
+    assert "t1" not in s.unacked_tuples
+    assert "t1" not in s.failed_tuples
 
 
 if __name__ == "__main__":
