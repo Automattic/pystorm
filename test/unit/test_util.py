@@ -114,30 +114,6 @@ def test_get_storm_workers_asks_nimbus_when_unconfigured(monkeypatch):
     assert len(calls) == 1
 
 
-def test_nimbus_storm_version_parses_tuple():
-    from pystorm_a8c.util import nimbus_storm_version
-
-    class FakeClient:
-        def getVersion(self):
-            return "1.2.3"  # what storm-ha and the local cluster both report
-
-    assert nimbus_storm_version(FakeClient()) == (1, 2, 3)
-
-
-def test_nimbus_storm_version_propagates_a_failure():
-    """Swallowing it would report a timeout or a wrong host as an old Storm,
-    which silently skips the topology-name check downstream.
-    """
-    from pystorm_a8c.util import nimbus_storm_version
-
-    class Unreachable:
-        def getVersion(self):
-            raise ConnectionRefusedError("nimbus is down")
-
-    with pytest.raises(ConnectionRefusedError):
-        nimbus_storm_version(Unreachable())
-
-
 # ---------------------------------------------------------------- config
 
 

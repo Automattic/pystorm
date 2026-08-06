@@ -214,17 +214,3 @@ def get_storm_workers(env_config):
         return workers
     client = get_nimbus_client(env_config)
     return [s.host for s in client.getClusterInfo().supervisors]
-
-
-def nimbus_storm_version(nimbus_client):
-    """Return Nimbus's Storm version as a comparable tuple.
-
-    A tuple rather than a version object, so ``setuptools`` stays out of the
-    runtime dependencies. RPC failures propagate: a timeout or a wrong host is
-    not an old Storm.
-    """
-    parts = []
-    for chunk in str(nimbus_client.getVersion()).split("."):
-        digits = "".join(c for c in chunk if c.isdigit())
-        parts.append(int(digits) if digits else 0)
-    return tuple(parts)

@@ -24,7 +24,6 @@ from pystorm_a8c.util import (
     get_storm_workers,
     get_topology_definition,
     get_topology_from_file,
-    nimbus_storm_version,
     set_topology_serializer,
 )
 
@@ -368,12 +367,10 @@ def _submit_topology(
 ):
     set_topology_serializer(env_config, config, topology_class)
 
-    # Check if topology name is okay on Storm versions that support that
-    if nimbus_storm_version(nimbus_client) >= (1, 1, 0):
-        if not nimbus_client.isTopologyNameAllowed(topology_name):
-            raise ValueError(
-                f"Nimbus says {topology_name} is an invalid name for a Storm topology."
-            )
+    if not nimbus_client.isTopologyNameAllowed(topology_name):
+        raise ValueError(
+            f"Nimbus says {topology_name} is an invalid name for a Storm topology."
+        )
 
     print(f"Submitting {topology_name} topology to nimbus...", end="")
     sys.stdout.flush()

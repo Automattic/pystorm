@@ -251,23 +251,33 @@ def test_upload_jar_chunks_the_whole_file(tmp_path):
     client.finishFileUpload.assert_called_once_with("/upload/loc")
 
 
-def test_name_check_is_skipped_on_storm_below_1_1(monkeypatch):
-    """isTopologyNameAllowed does not exist before 1.1.0; calling it errors."""
+def test_the_name_check_actually_runs():
+    """It was gated behind a Nimbus getVersion() call that no Storm exposes.
+
+    `getVersion` is in no version of Storm's Nimbus Thrift service, so the gate
+    could only ever fail, and the check behind it never ran.
+    """
     from pystorm_a8c.cli import submit
 
     client = MagicMock()
-    client.getVersion.return_value = "1.0.3"
+    client.isTopologyNameAllowed.return_value = True
     submit._submit_topology(
         "raws", MagicMock(), "/remote.jar", {}, {}, client, options={}
     )
-    client.isTopologyNameAllowed.assert_not_called()
+    client.isTopologyNameAllowed.assert_called_once_with("raws")
+
+
+def test_the_nimbus_service_has_no_getversion():
+    """Guards the gate from coming back: the IDL simply has no such method."""
+    from pystorm_a8c.storm import Nimbus
+
+    assert not hasattr(Nimbus, "getVersion_args")
 
 
 def test_a_name_nimbus_rejects_aborts_the_submit():
     from pystorm_a8c.cli import submit
 
     client = MagicMock()
-    client.getVersion.return_value = "1.2.3"
     client.isTopologyNameAllowed.return_value = False
     with pytest.raises(ValueError):
         submit._submit_topology(
@@ -281,7 +291,6 @@ def test_inactive_submits_with_inactive_initial_status():
     from pystorm_a8c.cli import submit
 
     client = MagicMock()
-    client.getVersion.return_value = "1.2.3"
     client.isTopologyNameAllowed.return_value = True
     submit._submit_topology(
         "raws", MagicMock(), "/remote.jar", {}, {}, client, options={}, active=False
@@ -294,7 +303,6 @@ def test_options_are_submitted_as_json():
     from pystorm_a8c.cli import submit
 
     client = MagicMock()
-    client.getVersion.return_value = "1.2.3"
     client.isTopologyNameAllowed.return_value = True
     submit._submit_topology(
         "raws",
@@ -444,7 +452,6 @@ def _patched_submit(monkeypatch, nimbus, **overrides):
     monkeypatch.setattr(mod, "get_storm_workers", lambda env: ["w1", "w2"])
     monkeypatch.setattr(mod, "get_nimbus_host_port", lambda env: ("nimbus-host", 6627))
     monkeypatch.setattr(mod, "get_nimbus_client", lambda *a, **kw: nimbus)
-    monkeypatch.setattr(mod, "nimbus_storm_version", lambda c: (1, 2, 3))
     monkeypatch.setattr(mod, "set_topology_serializer", lambda *a: None)
     return topology_class, shell
 
