@@ -6,7 +6,7 @@ build-backend = "uv_build"
 name = "pystorm-a8c"
 # Pre-release while this branch is in review. Drop the `bN` to cut 1.0.0 --
 # see doc/RELEASING.md. The docs already describe the package as 1.0.0.
-version = "1.0.0b2"
+version = "1.0.0b3"
 description = "Slim Apache Storm multi-lang runtime, topology DSL, and Nimbus submit client for Parse.ly"
 readme = "README.md"
 requires-python = ">=3.9"
