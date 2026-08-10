@@ -174,8 +174,29 @@ def get_nimbus_host_port(env_config):
     return nimbus, DEFAULT_NIMBUS_PORT
 
 
+def _open_nimbus_client(host, port, timeout):
+    return make_client(
+        Nimbus,
+        host=host,
+        port=port,
+        proto_factory=TBinaryProtocolFactory(),
+        trans_factory=TFramedTransportFactory(),
+        timeout=timeout,
+    )
+
+
 def get_nimbus_client(env_config=None, host=None, port=None, timeout=None):
-    """Open a Thrift RPC client against Nimbus.
+    """Open a Thrift RPC client against the *leader* Nimbus.
+
+    The configured host is a seed, not necessarily the destination. On an HA
+    cluster a follower answers reads quite happily -- ``getClusterInfo``, a JAR
+    upload -- and then throws a bare RuntimeException on the first write, which
+    Thrift reports as ``TApplicationException: Internal error processing
+    killTopologyWithOpts`` with nothing in it about leadership. So ask whoever
+    answers who the leader is, and reconnect if it is not them.
+
+    ``getLeader`` is served by followers too: it reads the election state from
+    ZooKeeper rather than asserting leadership.
 
     :param env_config: The project's parsed env config. Not consulted when
                        ``host`` is given.
@@ -189,14 +210,19 @@ def get_nimbus_client(env_config=None, host=None, port=None, timeout=None):
         host, port = get_nimbus_host_port(env_config)
     if timeout is None:
         timeout = DEFAULT_NIMBUS_TIMEOUT_MS
-    return make_client(
-        Nimbus,
-        host=host,
-        port=port,
-        proto_factory=TBinaryProtocolFactory(),
-        trans_factory=TFramedTransportFactory(),
-        timeout=timeout,
+
+    client = _open_nimbus_client(host, port, timeout)
+    leader = client.getLeader()
+    if (leader.host, leader.port) == (host, port):
+        return client
+
+    print(
+        f"{host}:{port} is not the leader Nimbus; connecting to "
+        f"{leader.host}:{leader.port}",
+        file=sys.stderr,
     )
+    client.close()
+    return _open_nimbus_client(leader.host, leader.port, timeout)
 
 
 def get_storm_workers(env_config):

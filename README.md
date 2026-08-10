@@ -184,7 +184,7 @@ Only these keys are read. Anything else is ignored.
 | Key | Meaning |
 |---|---|
 | `topology_specs` | Directory holding topology definition files |
-| `envs.<name>.nimbus` | `host` or `host:port` (port defaults to 6627) |
+| `envs.<name>.nimbus` | `host` or `host:port` (port defaults to 6627). A seed — see below |
 | `envs.<name>.workers` | Supervisor hosts. If absent, Nimbus is asked |
 | `envs.<name>.log` | `level` only. See below |
 | `envs.<name>.options` | Storm conf defaults, overridden by `-o` |
@@ -193,6 +193,17 @@ Only these keys are read. Anything else is ignored.
 Option precedence, lowest to highest:
 `envs.<name>.options` → `log.level` → the `Topology` class's `config` → `-o` →
 the settings derived from `--venv-blobstore-key`, which nothing can override.
+
+### Nimbus leadership
+
+`envs.<name>.nimbus` is a seed, not necessarily the host that gets used. On an
+HA cluster `submit` asks whoever answers `getLeader()` and reconnects to the
+leader, printing a line to stderr when it does.
+
+Without that, a follower serves the reads — `getClusterInfo`, the JAR upload —
+and then throws on the first write, which Storm reports as
+`TApplicationException: Internal error processing killTopologyWithOpts` with
+nothing in it about leadership.
 
 `use_ssh_for_nimbus` is **refused**: Nimbus is always contacted directly, so a
 config still carrying the key is telling you something that is not true. The

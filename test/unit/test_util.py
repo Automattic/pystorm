@@ -319,3 +319,67 @@ def test_env_serializer_overrides_the_project_serializer():
         set_topology_serializer(
             {"serializer": "msgpack"}, {"serializer": "json"}, make_topology_class()
         )
+
+
+def _leader_stub(host, port, opened):
+    """A make_client stand-in that records every connection it opens."""
+
+    def fake(service, host=None, port=None, **kwargs):
+        opened.append((host, port))
+        client = SimpleNamespace(closed=False)
+        client.getLeader = lambda: SimpleNamespace(
+            host=host_of_leader, port=port_of_leader, isLeader=True
+        )
+        client.close = lambda: setattr(client, "closed", True)
+        return client
+
+    host_of_leader, port_of_leader = host, port
+    return fake
+
+
+def test_nimbus_client_reconnects_to_the_leader(monkeypatch):
+    """A follower serves reads and then throws on the first write.
+
+    Storm reports that as `TApplicationException: Internal error processing
+    killTopologyWithOpts`, which says nothing about leadership.
+    """
+    import pystorm_a8c.util as util
+
+    opened = []
+    monkeypatch.setattr(util, "make_client", _leader_stub("leader-host", 6627, opened))
+
+    util.get_nimbus_client({"nimbus": "follower-host:6627"})
+
+    assert opened == [("follower-host", 6627), ("leader-host", 6627)]
+
+
+def test_nimbus_client_stays_put_when_it_is_already_the_leader(monkeypatch):
+    import pystorm_a8c.util as util
+
+    opened = []
+    monkeypatch.setattr(util, "make_client", _leader_stub("h", 6627, opened))
+
+    util.get_nimbus_client({"nimbus": "h:6627"})
+
+    assert opened == [("h", 6627)]
+
+
+def test_the_follower_connection_is_closed_on_redirect(monkeypatch):
+    import pystorm_a8c.util as util
+
+    clients = []
+
+    def fake(service, host=None, port=None, **kwargs):
+        client = SimpleNamespace(closed=False)
+        client.getLeader = lambda: SimpleNamespace(
+            host="leader-host", port=6627, isLeader=True
+        )
+        client.close = lambda: setattr(client, "closed", True)
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(util, "make_client", fake)
+    util.get_nimbus_client({"nimbus": "follower-host:6627"})
+
+    assert clients[0].closed is True
+    assert clients[1].closed is False
