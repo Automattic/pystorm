@@ -32,7 +32,8 @@ fmt:
 dist: clean
 	uv build
 
-# Requires TWINE_REPOSITORY_URL=https://<internal-index>/
+# Requires TWINE_REPOSITORY_URL=https://<internal-index>/ E.g.
+# TWINE_REPOSITORY_URL=https://pypi.cogtree.com/cogtree/main make publish
 publish: dist
 	@test -n "$$TWINE_REPOSITORY_URL" || { echo "TWINE_REPOSITORY_URL is not set; refusing to publish"; exit 1; }
 	uv publish --publish-url "$$TWINE_REPOSITORY_URL"
