@@ -14,6 +14,25 @@ from .serializer import Serializer
 
 log = logging.getLogger(__name__)
 
+# Storm reads every integer in our JSON into a Java Long. A value outside this
+# range makes it throw, which kills the worker rather than the one message.
+INT64_MIN = -(2 ** 63)
+INT64_MAX = 2 ** 63 - 1
+
+
+def _replace_out_of_range(value):
+    """Return `value` with every integer Storm cannot read replaced by None."""
+    if isinstance(value, dict):
+        return {k: _replace_out_of_range(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_replace_out_of_range(v) for v in value]
+    # bool is a subclass of int and always serializes to true or false.
+    if isinstance(value, int) and not isinstance(value, bool):
+        if value < INT64_MIN or value > INT64_MAX:
+            log.warning("Replaced integer Storm cannot read with None: %s", value)
+            return None
+    return value
+
 
 class JSONSerializer(Serializer):
     def __init__(self, input_stream, output_stream, reader_lock, writer_lock):
@@ -92,7 +111,9 @@ class JSONSerializer(Serializer):
 
     def serialize_dict(self, msg_dict):
         """Serialize to JSON a message dictionary."""
-        serialized = json.dumps(msg_dict, namedtuple_as_object=False)
+        serialized = json.dumps(
+            _replace_out_of_range(msg_dict), namedtuple_as_object=False
+        )
         if PY2:
             serialized = serialized.decode("utf-8")
         serialized = "{}\nend\n".format(serialized)
