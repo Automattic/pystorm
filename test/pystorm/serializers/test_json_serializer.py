@@ -37,6 +37,67 @@ class TestJSONSerializer(SerializerTestCase):
         self.instance.send_message(msg_dict)
         assert self.instance.output_stream.getvalue() == expected_output
 
+    @pytest.mark.parametrize("value", [2 ** 63, -(2 ** 63) - 1, 2 ** 64 - 1])
+    def test_serialize_replaces_integers_storm_cannot_read(self, value):
+        """
+        When: a message holds an integer wider than a Java Long
+        Then: `serialize_dict` writes null in its place
+        """
+        serialized = self.instance.serialize_dict({"value": value})
+        assert json.loads(serialized.split("\n")[0]) == {"value": None}
+
+    @pytest.mark.parametrize("value", [2 ** 63 - 1, -(2 ** 63), 0, 1789559340000])
+    def test_serialize_keeps_integers_storm_can_read(self, value):
+        """
+        When: a message holds an integer that fits in a Java Long
+        Then: `serialize_dict` leaves it alone
+        """
+        serialized = self.instance.serialize_dict({"value": value})
+        assert json.loads(serialized.split("\n")[0]) == {"value": value}
+
+    def test_serialize_reaches_integers_inside_the_emitted_tuple(self):
+        """
+        When: the out-of-range integer sits nested in a batch
+        Then: `serialize_dict` replaces it and keeps the rest of the batch
+        """
+        msg = {
+            "command": "emit",
+            "tuple": [
+                "a-stream",
+                [{"id": "first", "value": 2 ** 64}, {"id": "second", "value": 7}],
+                None,
+            ],
+        }
+        serialized = self.instance.serialize_dict(msg)
+        events = json.loads(serialized.split("\n")[0])["tuple"][1]
+        assert events[0] == {"id": "first", "value": None}
+        assert events[1] == {"id": "second", "value": 7}
+
+    def test_serialize_keeps_long_digit_runs_inside_strings(self):
+        """
+        When: a string value holds more digits than any integer
+        Then: `serialize_dict` leaves the string alone
+        """
+        identifier = "08988130376555764913840025431799009902"
+        serialized = self.instance.serialize_dict({"id": identifier})
+        assert json.loads(serialized.split("\n")[0]) == {"id": identifier}
+
+    def test_serialize_keeps_booleans_as_booleans(self):
+        """
+        When: a message holds booleans, which subclass int
+        Then: `serialize_dict` leaves them alone
+        """
+        serialized = self.instance.serialize_dict({"yes": True, "no": False})
+        assert json.loads(serialized.split("\n")[0]) == {"yes": True, "no": False}
+
+    def test_serialize_replaces_a_bare_integer_message(self):
+        """
+        When: the whole message is an out-of-range integer
+        Then: `serialize_dict` writes null
+        """
+        serialized = self.instance.serialize_dict(2 ** 64)
+        assert json.loads(serialized.split("\n")[0]) is None
+
     def test_send_message_raises_stormwentaway(self):
         string_io_mock = mock.MagicMock(autospec=True)
 
