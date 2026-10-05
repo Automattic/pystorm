@@ -1,4 +1,5 @@
 import io
+import json
 import threading
 
 import pytest
@@ -130,3 +131,49 @@ def test_an_unwrappable_stream_is_refused():
 
     with pytest.raises(TypeError, match="Cannot wrap"):
         JSONSerializer(NotAStream(), NotAStream(), threading.RLock(), threading.RLock())
+
+
+@pytest.mark.parametrize("value", [2**63, -(2**63) - 1, 2**64 - 1])
+def test_serialize_replaces_integers_storm_cannot_read(value):
+    """Storm reads every integer into a Java Long and throws on anything wider,
+    which kills the worker rather than the message. Writing null keeps the rest
+    of the batch."""
+    serialized = make_serializer().serialize_dict({"value": value})
+    assert json.loads(serialized.split("\n")[0]) == {"value": None}
+
+
+@pytest.mark.parametrize("value", [2**63 - 1, -(2**63), 0, 1789559340000])
+def test_serialize_keeps_integers_storm_can_read(value):
+    """The boundaries themselves fit, so only what Java cannot hold is replaced."""
+    serialized = make_serializer().serialize_dict({"value": value})
+    assert json.loads(serialized.split("\n")[0]) == {"value": value}
+
+
+def test_serialize_reaches_integers_inside_the_emitted_tuple():
+    """The value can arrive nested in a batch, not at the top level."""
+    msg = {
+        "command": "emit",
+        "tuple": [
+            "a-stream",
+            [{"id": "first", "value": 2**64}, {"id": "second", "value": 7}],
+            None,
+        ],
+    }
+    events = json.loads(make_serializer().serialize_dict(msg).split("\n")[0])["tuple"][
+        1
+    ]
+    assert events[0] == {"id": "first", "value": None}
+    assert events[1] == {"id": "second", "value": 7}
+
+
+def test_serialize_keeps_long_digit_runs_inside_strings():
+    """Identifiers can be longer than any integer and must survive untouched."""
+    identifier = "08988130376555764913840025431799009902"
+    serialized = make_serializer().serialize_dict({"id": identifier})
+    assert json.loads(serialized.split("\n")[0]) == {"id": identifier}
+
+
+def test_serialize_keeps_booleans_as_booleans():
+    """bool subclasses int, so the range check must skip it."""
+    serialized = make_serializer().serialize_dict({"yes": True, "no": False})
+    assert json.loads(serialized.split("\n")[0]) == {"yes": True, "no": False}
