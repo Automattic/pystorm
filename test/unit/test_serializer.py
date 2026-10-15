@@ -177,3 +177,22 @@ def test_serialize_keeps_booleans_as_booleans():
     """bool subclasses int, so the range check must skip it."""
     serialized = make_serializer().serialize_dict({"yes": True, "no": False})
     assert json.loads(serialized.split("\n")[0]) == {"yes": True, "no": False}
+
+
+def test_serialize_decodes_bytes_as_utf8():
+    """pystorm's simplejson decoded bytes as UTF-8, and topologies still emit
+    them. json refuses bytes, which kills the worker."""
+    serialized = make_serializer().serialize_dict({"value": "café".encode("utf-8")})
+    assert json.loads(serialized.split("\n")[0]) == {"value": "café"}
+
+
+def test_serialize_reaches_bytes_inside_the_emitted_tuple():
+    """The pixels spout emits bytes nested in a batch of events."""
+    msg = {
+        "command": "emit",
+        "tuple": ["a-stream", [{"id": "first", "url": b"https://parse.ly/"}], None],
+    }
+    events = json.loads(make_serializer().serialize_dict(msg).split("\n")[0])["tuple"][
+        1
+    ]
+    assert events == [{"id": "first", "url": "https://parse.ly/"}]
