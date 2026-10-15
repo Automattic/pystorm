@@ -27,6 +27,15 @@ def _replace_out_of_range(value):
     return value
 
 
+class _SimpleJSONCompatibleEncoder(json.JSONEncoder):
+    """simplejson, which pystorm used, decoded bytes as UTF-8; json refuses them."""
+
+    def default(self, o):
+        if isinstance(o, bytes):
+            return o.decode("utf-8")
+        return super().default(o)
+
+
 class JSONSerializer:
     """Storm multi-lang JSON line protocol.
 
@@ -87,7 +96,10 @@ class JSONSerializer:
 
     def serialize_dict(self, msg_dict):
         """Serialize a message to the multi-lang wire format."""
-        return f"{json.dumps(_replace_out_of_range(msg_dict))}\nend\n"
+        serialized = json.dumps(
+            _replace_out_of_range(msg_dict), cls=_SimpleJSONCompatibleEncoder
+        )
+        return f"{serialized}\nend\n"
 
     def send_message(self, msg_dict):
         """Write a message to Storm.
