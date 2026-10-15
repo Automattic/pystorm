@@ -335,7 +335,7 @@ names and needed the marker.
 ### Pinning
 
 ```
-pystorm-a8c==1.0.1
+pystorm-a8c==1.0.2
 ```
 
 ### Git tags
