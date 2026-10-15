@@ -13,22 +13,25 @@ INT64_MIN = -(2**63)
 INT64_MAX = 2**63 - 1
 
 
-def _make_storm_readable(value):
-    """Return `value` with bytes decoded and every integer Storm cannot read
-    replaced by None."""
+def _replace_out_of_range(value):
+    """Return `value` with every integer Storm cannot read replaced by None."""
     if isinstance(value, dict):
-        return {k: _make_storm_readable(v) for k, v in value.items()}
+        return {k: _replace_out_of_range(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_make_storm_readable(v) for v in value]
-    # The simplejson that pystorm used decoded bytes as UTF-8; json refuses them.
-    if isinstance(value, bytes):
-        return value.decode("utf-8")
+        return [_replace_out_of_range(v) for v in value]
     # bool is a subclass of int and always serializes to true or false.
     if isinstance(value, int) and not isinstance(value, bool):
         if value < INT64_MIN or value > INT64_MAX:
             log.warning("Replaced integer Storm cannot read with None: %s", value)
             return None
     return value
+
+
+def _decode_bytes(value):
+    """simplejson, which pystorm used, decoded bytes as UTF-8; json refuses them."""
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
 class JSONSerializer:
@@ -91,7 +94,7 @@ class JSONSerializer:
 
     def serialize_dict(self, msg_dict):
         """Serialize a message to the multi-lang wire format."""
-        return f"{json.dumps(_make_storm_readable(msg_dict))}\nend\n"
+        return f"{json.dumps(_replace_out_of_range(msg_dict), default=_decode_bytes)}\nend\n"
 
     def send_message(self, msg_dict):
         """Write a message to Storm.
