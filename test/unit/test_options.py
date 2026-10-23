@@ -283,3 +283,56 @@ def test_the_old_worker_list_option_is_refused_with_its_replacement():
 
     assert "storm.workers.list" in str(exc.value)
     assert "topology.workers" in str(exc.value)
+
+
+def test_blobs():
+    options = resolve_options(
+        None,
+        {"workers": ["w1"]},
+        fake_topology(),
+        venv_blobstore_key="k_tar_gz",
+        blobs={"geoip2-city": "GeoIP2-City.mmdb"},
+    )
+
+    assert options["topology.blobstore.map"] == {
+        "k_tar_gz": {"localname": "venv", "uncompress": True},
+        "geoip2-city": {"localname": "GeoIP2-City.mmdb", "uncompress": False},
+    }
+
+
+@pytest.mark.parametrize("localname", ["venv", "db/GeoIP2-City.mmdb", "..", ""])
+def test_blobs_invalid_local_name(localname):
+    """
+    When a blob's local name is the venv's, a path, or empty
+    Then the submit is refused instead of overwriting or escaping the worker directory
+    """
+    with pytest.raises(ValueError, match="local name"):
+        resolve_options(
+            None,
+            {"workers": ["w1"]},
+            fake_topology(),
+            venv_blobstore_key="k_tar_gz",
+            blobs={"geoip2-city": localname},
+        )
+
+
+def test_blobs_same_venv_name():
+    with pytest.raises(ValueError, match="venv"):
+        resolve_options(
+            None,
+            {"workers": ["w1"]},
+            fake_topology(),
+            venv_blobstore_key="k_tar_gz",
+            blobs={"k_tar_gz": "other"},
+        )
+
+
+def test_blobs_same_local_name():
+    with pytest.raises(ValueError, match="local name"):
+        resolve_options(
+            None,
+            {"workers": ["w1"]},
+            fake_topology(),
+            venv_blobstore_key="k_tar_gz",
+            blobs={"a": "same.mmdb", "b": "same.mmdb"},
+        )

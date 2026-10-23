@@ -120,6 +120,7 @@ pystorm-a8c submit \
 | `-o`, `--option` | `key=value` passed through to the Storm conf; repeatable |
 | `--config` | Path to config.json |
 | `--venv-blobstore-key` | **Required.** Blobstore key of the worker virtualenv tarball |
+| `--blob` | `KEY=LOCALNAME` of an extra blob for the workers; repeatable |
 
 `-o` values are parsed as JSON when possible and left as strings otherwise, so
 `-o topology.workers=4` gives an int and `-o topology.environment={...}` gives a
@@ -149,6 +150,16 @@ extracts `localname` alongside. Passing `topology.blobstore.map` yourself is
 refused — two sources for one path is how the execution command and the
 blobstore `localname` drift apart, and the symptom is a worker that never
 starts.
+
+### Extra files
+
+`--blob KEY=LOCALNAME` adds another blob to the map, next to the venv. A
+component reads it at `../LOCALNAME`. The blob must already exist in the
+blobstore. `LOCALNAME` must be a plain file name other than `venv`.
+
+```bash
+pystorm-a8c submit ... --blob geoip2-city=GeoIP2-City.mmdb
+```
 
 `topology.environment` is the one you can extend. Extra variables are merged in
 and `PATH` stays derived:
@@ -335,7 +346,7 @@ names and needed the marker.
 ### Pinning
 
 ```
-pystorm-a8c==1.0.2
+pystorm-a8c==1.0.3
 ```
 
 ### Git tags

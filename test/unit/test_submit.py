@@ -5,7 +5,7 @@ Tests for the submit command.
 import inspect
 import json
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -540,3 +540,59 @@ def test_submit_topology_refuses_a_par_dict_missing_this_env(monkeypatch):
         submit_topology(venv_blobstore_key="k_tar_gz", remote_jar_path="/srv/t.jar")
 
     nimbus.submitTopologyWithOpts.assert_not_called()
+
+
+def submit_parser():
+    import argparse
+
+    from pystorm_a8c.cli import submit
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers()
+    submit.subparser_hook(subparsers)
+    return parser
+
+
+def test_blob_flags_are_split_into_key_and_local_name():
+    args = submit_parser().parse_args(
+        [
+            "submit",
+            "--venv-blobstore-key",
+            "k_tar_gz",
+            "--blob",
+            "geoip2-city=GeoIP2-City.mmdb",
+            "--blob",
+            "nielsen=metro_and_market_codes.csv",
+        ]
+    )
+
+    assert args.blobs == [
+        ("geoip2-city", "GeoIP2-City.mmdb"),
+        ("nielsen", "metro_and_market_codes.csv"),
+    ]
+
+
+def test_blobs_default_to_none():
+    args = submit_parser().parse_args(["submit", "--venv-blobstore-key", "k"])
+
+    assert args.blobs is None
+
+
+def test_blobs_without_local_name():
+    with pytest.raises(SystemExit):
+        submit_parser().parse_args(
+            ["submit", "--venv-blobstore-key", "k", "--blob", "geoip2-city"]
+        )
+
+
+@patch("pystorm_a8c.cli.submit.submit_topology")
+def test_blobs_from_main(submit_topology):
+    from pystorm_a8c.cli import submit
+
+    args = submit_parser().parse_args(
+        ["submit", "--venv-blobstore-key", "k", "--blob", "geo=GeoIP2-City.mmdb"]
+    )
+
+    submit.main(args)
+
+    assert submit_topology.call_args.kwargs["blobs"] == {"geo": "GeoIP2-City.mmdb"}

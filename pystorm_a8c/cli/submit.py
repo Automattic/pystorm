@@ -46,7 +46,7 @@ WORKER_PATH = f"{VIRTUALENV_BIN}:/usr/local/bin:/usr/bin:/bin"
 #: appear -- `-o`, the config.json env block, its `options` block, or a
 #: Topology's `config` -- rather than accepted and quietly dropped.
 UNSUPPORTED_OPTIONS = {
-    "topology.blobstore.map": "built from --venv-blobstore-key",
+    "topology.blobstore.map": "built from --venv-blobstore-key and --blob",
     # Dotted, so it reads like a Storm setting, but Apache Storm has no such
     # key: it would be accepted and do nothing.
     "storm.workers.list": (
@@ -103,7 +103,58 @@ class _StoreDictAction(argparse.Action):
         setattr(namespace, self.dest, items)
 
 
-def blobstore_options(venv_blobstore_key, environment=None):
+def parse_blob(value):
+    """Split a ``KEY=LOCALNAME`` blob flag into its key and local name."""
+    key, _, localname = value.partition("=")
+    if not key or not localname:
+        raise argparse.ArgumentTypeError(f"expected KEY=LOCALNAME, got {value!r}")
+    return key, localname
+
+
+def _is_plain_file_name(name):
+    """Whether a blob with this local name lands as one file next to the venv."""
+    if name in ("", ".", "..", VIRTUALENV_NAME):
+        return False
+    return "/" not in name
+
+
+def check_blobs(venv_blobstore_key, blobs):
+    """Refuse blobs that would replace the venv or land outside the worker directory."""
+    problems = []
+    keys_by_localname = {}
+
+    for key, localname in sorted(blobs.items()):
+        if key == venv_blobstore_key:
+            problems.append(f"{key} is the venv blob")
+
+        if not _is_plain_file_name(localname):
+            problems.append(f"{key} has local name {localname!r}")
+        elif localname in keys_by_localname:
+            other_key = keys_by_localname[localname]
+            problems.append(f"{key} and {other_key} share local name {localname!r}")
+        else:
+            keys_by_localname[localname] = key
+
+    if problems:
+        raise ValueError(
+            f"Unusable blobs: {'; '.join(problems)}. Each blob needs its own "
+            f"local name: a plain file name other than {VIRTUALENV_NAME!r}."
+        )
+
+
+def blobstore_map(venv_blobstore_key, blobs):
+    """The ``topology.blobstore.map`` for the venv and the extra blobs."""
+    blob_map = {
+        venv_blobstore_key: {"localname": VIRTUALENV_NAME, "uncompress": True},
+    }
+
+    for key, localname in blobs.items():
+        blob_map[key] = {"localname": localname, "uncompress": False}
+
+    return blob_map
+
+
+def blobstore_options(venv_blobstore_key, environment=None, blobs=None):
     """The Storm settings that put a virtualenv on every worker.
 
     The blobstore ``localname``, the ``PATH`` and the execution command all
@@ -113,11 +164,14 @@ def blobstore_options(venv_blobstore_key, environment=None):
     :param environment: extra worker environment variables to carry alongside
                         the derived ``PATH``. ``PATH`` itself is not accepted;
                         see :func:`check_worker_environment`.
+    :param blobs: extra blobs as ``{key: localname}``. Each lands as a file
+                  next to the venv, at ``../<localname>`` from the component.
     """
+    blobs = blobs or {}
+    check_blobs(venv_blobstore_key, blobs)
+
     return {
-        "topology.blobstore.map": {
-            venv_blobstore_key: {"localname": VIRTUALENV_NAME, "uncompress": True}
-        },
+        "topology.blobstore.map": blobstore_map(venv_blobstore_key, blobs),
         "topology.environment": {**(environment or {}), "PATH": WORKER_PATH},
     }
 
@@ -167,7 +221,9 @@ def check_options_are_consumed(options, source):
         )
 
 
-def resolve_options(cli_options, env_config, topology_class, venv_blobstore_key=None):
+def resolve_options(
+    cli_options, env_config, topology_class, venv_blobstore_key=None, blobs=None
+):
     """Resolve potentially conflicting Storm options from three sources:
 
     CLI options > Topology options > config.json options
@@ -231,7 +287,9 @@ def resolve_options(cli_options, env_config, topology_class, venv_blobstore_key=
     if venv_blobstore_key is not None:
         environment = storm_options.get("topology.environment")
         check_worker_environment(environment)
-        storm_options.update(blobstore_options(venv_blobstore_key, environment))
+        storm_options.update(
+            blobstore_options(venv_blobstore_key, environment, blobs=blobs)
+        )
 
     if storm_options.get("topology.debug", False):
         storm_options["pystorm.log.level"] = "debug"
@@ -391,6 +449,7 @@ def _submit_topology(
 def submit_topology(
     *,
     venv_blobstore_key,
+    blobs=None,
     name=None,
     env_name=None,
     options=None,
@@ -411,6 +470,7 @@ def submit_topology(
     :param venv_blobstore_key: blobstore key of the virtualenv tarball the
                                workers run out of. Required: there is no
                                worker layout without one.
+    :param blobs: extra blobs to put next to the venv, as ``{key: localname}``.
     """
     if not venv_blobstore_key:
         raise ValueError(
@@ -424,7 +484,11 @@ def submit_topology(
     if override_name is None:
         override_name = name
     options = resolve_options(
-        options, env_config, topology_class, venv_blobstore_key=venv_blobstore_key
+        options,
+        env_config,
+        topology_class,
+        venv_blobstore_key=venv_blobstore_key,
+        blobs=blobs,
     )
     rewrite_execution_commands(topology_class)
     options["topology.original_name"] = name
@@ -532,6 +596,16 @@ def subparser_hook(subparsers):
         f"Derives the blobstore map, the worker PATH, and the {RUN_COMMAND!r} "
         f"path inside {VIRTUALENV_BIN!r}.",
     )
+    subparser.add_argument(
+        "--blob",
+        dest="blobs",
+        action="append",
+        type=parse_blob,
+        metavar="KEY=LOCALNAME",
+        help="Blobstore key of an extra file for the workers, and the file "
+        "name it gets next to the venv. Components read it at "
+        f"'{VIRTUALENV_ROOT}/LOCALNAME'. May be repeated.",
+    )
     jar = subparser.add_mutually_exclusive_group()
     jar.add_argument(
         "-j",
@@ -565,6 +639,7 @@ def main(args):
     """Submit a Storm topology to Nimbus."""
     submit_topology(
         venv_blobstore_key=args.venv_blobstore_key,
+        blobs=dict(args.blobs or []),
         name=args.name,
         env_name=args.environment,
         options=args.options,
